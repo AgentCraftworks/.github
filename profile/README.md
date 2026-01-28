@@ -1,1 +1,3 @@
-AgentCraftworks Overview
+AgentCraftworks is a GitHub App that automates and enhances software development workflows by managing repetitive tasks, pull requests, and issue tracking with intelligent agents, supporting both public and private repositories with minimal setup. It offers customizable automation for code reviews, branch management, labeling, and notifications to improve collaboration, security, and compliance by respecting repository permissions. 
+
+The app boosts productivity by automating routine tasks, reduces errors through consistent automation, scales from solo developers to large teams, and provides real-time notifications to keep teams informed. Installation is straightforward via the GitHub Marketplace, and the app is actively maintained with open contributions available. AgentCraftworks aims to be a partner in modern development by integrating intelligent agents directly into GitHub workflows to increase efficiency and collaboration.
