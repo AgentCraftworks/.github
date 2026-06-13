@@ -59,6 +59,21 @@ jobs:
               return;
             }
 
+            const allowedActions = new Set([
+              "opened",
+              "reopened",
+              "synchronize",
+              "ready_for_review",
+              "review_requested",
+            ]);
+            const action = context.payload.action || "";
+            if (!allowedActions.has(action)) {
+              core.notice(
+                `Skipping reviewer auto-request for action '${action}'. Allowed actions: ${[...allowedActions].join(", ")}.`
+              );
+              return;
+            }
+
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const pull_number = pr.number;
