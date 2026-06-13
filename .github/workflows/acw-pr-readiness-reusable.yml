@@ -1,0 +1,368 @@
+name: acw-pr-readiness-reusable
+
+on:
+  workflow_call:
+    inputs:
+      required_human_reviewer:
+        description: GitHub login required to approve PRs to protected base branches.
+        required: false
+        type: string
+        default: jenperret
+      enforced_base_branches:
+        description: Comma-delimited base branches requiring required_human_reviewer approval.
+        required: false
+        type: string
+        default: staging,main
+      request_copilot_review:
+        description: Attempt to auto-request Copilot reviewer identities.
+        required: false
+        type: boolean
+        default: true
+      copilot_reviewer_candidates:
+        description: Comma-delimited reviewer identities to try for Copilot review.
+        required: false
+        type: string
+        default: copilot,github-copilot[bot]
+      escalation_label:
+        description: Label added when findings require human decision.
+        required: false
+        type: string
+        default: needs-human-decision
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  security-events: read
+
+jobs:
+  request-reviewers:
+    name: Request Copilot + human reviewer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request reviewers
+        uses: actions/github-script@v8
+        env:
+          REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
+          REQUEST_COPILOT_REVIEW: ${{ inputs.request_copilot_review }}
+          COPILOT_REVIEWER_CANDIDATES: ${{ inputs.copilot_reviewer_candidates }}
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.notice("No pull_request payload found. Skipping.");
+              return;
+            }
+
+            if (pr.draft) {
+              core.notice(`PR #${pr.number} is draft. Waiting for ready_for_review.`);
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = pr.number;
+
+            const current = await github.rest.pulls.get({ owner, repo, pull_number });
+            const requested = new Set(
+              (current.data.requested_reviewers || []).map((r) => r.login.toLowerCase())
+            );
+
+            const candidates = [];
+            const human = (process.env.REQUIRED_HUMAN_REVIEWER || "").trim();
+            if (human) candidates.push(human);
+
+            const requestCopilot = String(process.env.REQUEST_COPILOT_REVIEW || "true").toLowerCase() === "true";
+            if (requestCopilot) {
+              const copilotCandidates = (process.env.COPILOT_REVIEWER_CANDIDATES || "")
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
+              candidates.push(...copilotCandidates);
+            }
+
+            for (const reviewer of candidates) {
+              const key = reviewer.toLowerCase();
+              if (requested.has(key)) {
+                core.info(`Reviewer already requested: ${reviewer}`);
+                continue;
+              }
+
+              try {
+                await github.rest.pulls.requestReviewers({
+                  owner,
+                  repo,
+                  pull_number,
+                  reviewers: [reviewer],
+                });
+                core.info(`Requested reviewer: ${reviewer}`);
+              } catch (error) {
+                core.warning(`Could not request reviewer '${reviewer}': ${error.message}`);
+              }
+            }
+
+  required-human-approval:
+    name: Validate required human approver
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required approval for protected base branches
+        uses: actions/github-script@v8
+        env:
+          REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
+          ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.notice("No pull_request payload found. Skipping.");
+              return;
+            }
+
+            const requiredReviewer = (process.env.REQUIRED_HUMAN_REVIEWER || "").trim().toLowerCase();
+            if (!requiredReviewer) {
+              core.notice("No required_human_reviewer configured. Skipping.");
+              return;
+            }
+
+            const enforcedBranches = (process.env.ENFORCED_BASE_BRANCHES || "")
+              .split(",")
+              .map((b) => b.trim())
+              .filter(Boolean);
+
+            const baseRef = pr.base?.ref || "";
+            if (!enforcedBranches.includes(baseRef)) {
+              core.notice(`Base branch '${baseRef}' is not enforced. Skipping human-approval gate.`);
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = pr.number;
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner,
+              repo,
+              pull_number,
+              per_page: 100,
+            });
+
+            const latestStateByUser = new Map();
+            for (const review of reviews) {
+              const user = (review.user?.login || "").toLowerCase();
+              if (!user) continue;
+              latestStateByUser.set(user, review.state);
+            }
+
+            const state = latestStateByUser.get(requiredReviewer);
+            const approved = state === "APPROVED";
+
+            await core.summary
+              .addHeading("Required Human Approval")
+              .addRaw(`Base branch: ${baseRef}\n\n`)
+              .addRaw(`Required reviewer: ${requiredReviewer}\n\n`)
+              .addRaw(`Latest review state: ${state || "none"}\n\n`)
+              .write();
+
+            if (!approved) {
+              core.setFailed(
+                `PRs targeting '${baseRef}' require APPROVED review from '${requiredReviewer}'. Current state: ${state || "none"}.`
+              );
+            }
+
+  review-feedback-gate:
+    name: Validate unresolved review threads
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail when unresolved review threads exist
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.notice("No pull_request payload found. Skipping.");
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const number = pr.number;
+
+            let unresolvedCount = 0;
+            let after = null;
+
+            do {
+              const result = await github.graphql(
+                `
+                query($owner: String!, $repo: String!, $number: Int!, $after: String) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      reviewThreads(first: 100, after: $after) {
+                        nodes {
+                          isResolved
+                          isOutdated
+                        }
+                        pageInfo {
+                          hasNextPage
+                          endCursor
+                        }
+                      }
+                    }
+                  }
+                }
+                `,
+                { owner, repo, number, after }
+              );
+
+              const threads = result.repository.pullRequest.reviewThreads.nodes || [];
+              unresolvedCount += threads.filter((t) => !t.isResolved && !t.isOutdated).length;
+              const pageInfo = result.repository.pullRequest.reviewThreads.pageInfo;
+              after = pageInfo.hasNextPage ? pageInfo.endCursor : null;
+            } while (after);
+
+            await core.summary
+              .addHeading("Review Feedback Gate")
+              .addRaw(`Unresolved (active) review threads: ${unresolvedCount}\n\n`)
+              .write();
+
+            if (unresolvedCount > 0) {
+              core.setFailed(
+                `Found ${unresolvedCount} unresolved active review thread(s). Address or resolve feedback before merge.`
+              );
+            }
+
+  ghas-gate:
+    name: Validate GHAS code scanning alerts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail when open code scanning alerts exist for this PR
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.notice("No pull_request payload found. Skipping.");
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const number = pr.number;
+
+            const alerts = await github.paginate(
+              "GET /repos/{owner}/{repo}/code-scanning/alerts",
+              {
+                owner,
+                repo,
+                state: "open",
+                pr: number,
+                per_page: 100,
+              }
+            );
+
+            await core.summary
+              .addHeading("GHAS Gate")
+              .addRaw(`Open code scanning alerts for PR #${number}: ${alerts.length}\n\n`)
+              .write();
+
+            if (alerts.length > 0) {
+              const details = alerts
+                .slice(0, 20)
+                .map((a) => {
+                  const rule = a.rule?.id || a.rule?.name || "unknown-rule";
+                  const severity = a.rule?.severity || a.rule?.security_severity_level || "unknown";
+                  const path = a.most_recent_instance?.location?.path || "unknown-path";
+                  return `- [${severity}] ${rule} @ ${path}`;
+                })
+                .join("\n");
+
+              core.setFailed(`Open GHAS code scanning alerts found (${alerts.length}).\n${details}`);
+            }
+
+  dependency-review-gate:
+    name: Validate dependency vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+
+  escalate-human-decision:
+    name: Escalate unresolved findings for human decision
+    runs-on: ubuntu-latest
+    needs:
+      - required-human-approval
+      - review-feedback-gate
+      - ghas-gate
+      - dependency-review-gate
+    if: ${{ always() }}
+    steps:
+      - name: Label and notify when any gate is failing
+        uses: actions/github-script@v8
+        env:
+          REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
+          ESCALATION_LABEL: ${{ inputs.escalation_label }}
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.notice("No pull_request payload found. Skipping.");
+              return;
+            }
+
+            const failing = Object.entries(${{ toJson(needs) }})
+              .filter(([, value]) => value.result === "failure")
+              .map(([key]) => key);
+
+            if (failing.length === 0) {
+              core.info("No failing gates. Escalation not required.");
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = pr.number;
+            const label = (process.env.ESCALATION_LABEL || "needs-human-decision").trim();
+            const reviewer = (process.env.REQUIRED_HUMAN_REVIEWER || "").trim();
+
+            try {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number,
+                labels: [label],
+              });
+            } catch (error) {
+              core.warning(`Could not add label '${label}': ${error.message}`);
+            }
+
+            if (reviewer) {
+              try {
+                await github.rest.pulls.requestReviewers({
+                  owner,
+                  repo,
+                  pull_number: issue_number,
+                  reviewers: [reviewer],
+                });
+              } catch (error) {
+                core.warning(`Could not request reviewer '${reviewer}': ${error.message}`);
+              }
+            }
+
+            const body = [
+              "Escalating for human decision due to unresolved quality/security findings.",
+              "",
+              `Failing gates: ${failing.join(", ")}`,
+              "",
+              `@${reviewer || "jenperret"} please review and decide on remediation path.`,
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body,
+            });
