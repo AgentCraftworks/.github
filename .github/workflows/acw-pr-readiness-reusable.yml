@@ -365,7 +365,10 @@ jobs:
               const label = (process.env.ESCALATION_LABEL || "needs-human-decision").trim();
 
               try {
-                await github.rest.issues.removeLabel({ owner, repo, issue_number, name: label });
+                await github.request(
+                  "DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}",
+                  { owner, repo, issue_number, name: label }
+                );
               } catch (_) {
                 // Ignore missing label / insufficient permissions.
               }
