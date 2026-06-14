@@ -443,7 +443,11 @@ jobs:
               `@${reviewer || "jenperret"} please review and decide on remediation path.`,
             ].join("\n");
 
-            await github.request(
-              "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
-              { owner, repo, issue_number, body }
-            );
+             try {
+               await github.request(
+                 "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+                 { owner, repo, issue_number, body }
+               );
+             } catch (error) {
+               core.warning(`Could not add escalation comment: ${error.message}`);
+             }
