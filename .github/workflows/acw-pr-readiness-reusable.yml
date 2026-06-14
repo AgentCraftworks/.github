@@ -124,6 +124,7 @@ jobs:
                     reviewers: [reviewer],
                   }
                 );
+                requested.add(key);
                 core.info(`Requested reviewer: ${reviewer}`);
               } catch (error) {
                 core.warning(`Could not request reviewer '${reviewer}': ${error.message}`);
