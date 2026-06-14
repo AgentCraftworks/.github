@@ -1,7 +1,7 @@
 # T3: Workflow with write access to pull requests and issues.
 # Orchestrates PR readiness gates: required approver, review feedback, GHAS, dependency review.
 # On gate failure, escalates with label + notification for human decision.
-# See: .github/copilot/instructions.md (engagement levels), .github/AGENTS.md (Octokit conventions).
+# See: .github/copilot/instructions.md (engagement levels), AGENTS.md (Octokit conventions).
 
 name: acw-pr-readiness-reusable
 
