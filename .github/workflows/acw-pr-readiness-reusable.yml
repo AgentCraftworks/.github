@@ -376,15 +376,34 @@ jobs:
             }
 
             if (reviewer) {
-              try {
-                await github.rest.pulls.requestReviewers({
-                  owner,
-                  repo,
-                  pull_number: issue_number,
-                  reviewers: [reviewer],
-                });
-              } catch (error) {
-                core.warning(`Could not request reviewer '${reviewer}': ${error.message}`);
+              const reviews = await github.paginate(github.rest.pulls.listReviews, {
+                owner,
+                repo,
+                pull_number: issue_number,
+                per_page: 100,
+              });
+
+              const latestStateByUser = new Map();
+              for (const review of reviews) {
+                const user = (review.user?.login || "").toLowerCase();
+                if (!user) continue;
+                latestStateByUser.set(user, review.state);
+              }
+
+              const state = latestStateByUser.get(reviewer.toLowerCase());
+              if (state !== "APPROVED") {
+                try {
+                  await github.rest.pulls.requestReviewers({
+                    owner,
+                    repo,
+                    pull_number: issue_number,
+                    reviewers: [reviewer],
+                  });
+                } catch (error) {
+                  core.warning(`Could not request reviewer '${reviewer}': ${error.message}`);
+                }
+              } else {
+                core.info(`Required reviewer '${reviewer}' already approved; skipping re-request.`);
               }
             }
 
