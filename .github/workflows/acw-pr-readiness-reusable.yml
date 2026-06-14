@@ -418,12 +418,15 @@ jobs:
               const state = latestReviewByUser.get(reviewer.toLowerCase())?.state;
               if (state !== "APPROVED") {
                 try {
-                  await github.rest.pulls.requestReviewers({
-                    owner,
-                    repo,
-                    pull_number: issue_number,
-                    reviewers: [reviewer],
-                  });
+                  await github.request(
+                    "POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers",
+                    {
+                      owner,
+                      repo,
+                      pull_number: issue_number,
+                      reviewers: [reviewer],
+                    }
+                  );
                 } catch (error) {
                   core.warning(`Could not request reviewer '${reviewer}': ${error.message}`);
                 }
