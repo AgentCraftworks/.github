@@ -79,7 +79,10 @@ jobs:
             const repo = context.repo.repo;
             const pull_number = pr.number;
 
-            const current = await github.rest.pulls.get({ owner, repo, pull_number });
+            const current = await github.request(
+              "GET /repos/{owner}/{repo}/pulls/{pull_number}",
+              { owner, repo, pull_number }
+            );
             const requested = new Set(
               (current.data.requested_reviewers || []).map((r) => r.login.toLowerCase())
             );
