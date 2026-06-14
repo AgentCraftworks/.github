@@ -472,10 +472,16 @@ jobs:
               core.warning(`Could not add label '${label}': ${error.message}`);
             }
 
-            // Only request reviewer if they haven't already APPROVED
-            if (reviewer) {
+            // Only request reviewer for enforced base branches, and only if they haven't already APPROVED
+            if (
+              reviewer &&
+              "${{ inputs.enforced_base_branches }}"
+                .split(",")
+                .map((b) => b.trim())
+                .filter(Boolean)
+                .includes(pr.base?.ref || "")
+            ) {
               try {
-                const reviews = await github.paginate(
                   "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews",
                   { owner, repo, pull_number: issue_number, per_page: 100 }
                 );
