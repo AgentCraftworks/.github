@@ -7,11 +7,6 @@ name: acw-pr-readiness-reusable
 
 on:
   workflow_call:
-    secrets:
-      GH_APP_ID:
-        required: true
-      GH_APP_PRIVATE_KEY:
-        required: true
     inputs:
       required_human_reviewer:
         description: GitHub login required to approve PRs to protected base branches.
