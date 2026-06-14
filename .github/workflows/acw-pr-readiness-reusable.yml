@@ -271,6 +271,7 @@ jobs:
   ghas-gate:
     name: Validate GHAS code scanning alerts
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' }}
     steps:
       - name: Fail when open code scanning alerts exist for the base branch
         uses: actions/github-script@v8
