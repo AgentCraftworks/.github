@@ -485,11 +485,14 @@ jobs:
                 );
 
                 const reviewerLower = reviewer.toLowerCase();
-                const reviewerData = reviews.find(
-                  (r) => (r.user?.login || "").toLowerCase() === reviewerLower
+                const reviewerReviews = reviews.filter(
+                  (r) => (r.user?.login || "").toLowerCase() === reviewerLower && r.submitted_at
                 );
-                const latestState = reviewerData?.state;
-
+                const latestReview = reviewerReviews.reduce(
+                  (latest, r) => (!latest || new Date(r.submitted_at) > new Date(latest.submitted_at) ? r : latest),
+                  null
+                );
+                const latestState = latestReview?.state;
                 if (latestState === "APPROVED") {
                   core.info(`Reviewer '${reviewer}' already approved. Skipping re-request.`);
                 } else {
