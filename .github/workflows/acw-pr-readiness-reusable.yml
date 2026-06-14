@@ -435,7 +435,7 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const issue_number = pr.number;
-            const label = "${{ inputs.escalation_label }}".trim();
+            const label = "${{ inputs.escalation_label }}".trim() || "needs-human-decision";
             const reviewer = "${{ inputs.required_human_reviewer }}".trim();
 
             if (failing.length === 0) {
