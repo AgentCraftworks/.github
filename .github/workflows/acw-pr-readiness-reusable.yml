@@ -383,12 +383,10 @@ jobs:
             const reviewer = (process.env.REQUIRED_HUMAN_REVIEWER || "").trim();
 
             try {
-              await github.rest.issues.addLabels({
-                owner,
-                repo,
-                issue_number,
-                labels: [label],
-              });
+              await github.request(
+                "POST /repos/{owner}/{repo}/issues/{issue_number}/labels",
+                { owner, repo, issue_number, labels: [label] }
+              );
             } catch (error) {
               core.warning(`Could not add label '${label}': ${error.message}`);
             }
