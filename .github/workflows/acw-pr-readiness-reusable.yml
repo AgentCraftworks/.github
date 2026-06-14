@@ -7,6 +7,11 @@ name: acw-pr-readiness-reusable
 
 on:
   workflow_call:
+    secrets:
+      GH_APP_ID:
+        required: true
+      GH_APP_PRIVATE_KEY:
+        required: true
     inputs:
       pull_number:
         description: Pull request number from caller workflow.
@@ -63,18 +68,18 @@ jobs:
       - name: Request reviewers
         uses: actions/github-script@v8
         env:
-          PR_NUMBER: ${{ inputs.pull_number }}
-          TRIGGER_ACTION: ${{ inputs.trigger_action }}
-          REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
-          ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
-          REQUEST_COPILOT_REVIEW: ${{ inputs.request_copilot_review }}
-          COPILOT_REVIEWER_CANDIDATES: ${{ inputs.copilot_reviewer_candidates }}
+          GH_PR_NUMBER: ${{ inputs.pull_number }}
+          GH_TRIGGER_ACTION: ${{ inputs.trigger_action }}
+          GH_REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
+          GH_ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
+          GH_REQUEST_COPILOT_REVIEW: ${{ inputs.request_copilot_review }}
+          GH_COPILOT_REVIEWER_CANDIDATES: ${{ inputs.copilot_reviewer_candidates }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const pull_number = Number(process.env.PR_NUMBER || "0");
+            const pull_number = Number(process.env.GH_PR_NUMBER || "0");
             if (!pull_number) {
               core.setFailed("Missing required input: pull_number");
               return;
@@ -99,7 +104,7 @@ jobs:
               "ready_for_review",
               "review_requested",
             ]);
-            const action = (process.env.TRIGGER_ACTION || "").trim() || context.payload.action || "";
+            const action = (process.env.GH_TRIGGER_ACTION || "").trim() || context.payload.action || "";
             if (!allowedActions.has(action)) {
               core.notice(
                 `Skipping reviewer auto-request for action '${action}'. Allowed actions: ${[...allowedActions].join(", ")}.`
@@ -111,8 +116,8 @@ jobs:
             );
 
             const candidates = [];
-            const human = (process.env.REQUIRED_HUMAN_REVIEWER || "").trim();
-            const enforcedBranches = (process.env.ENFORCED_BASE_BRANCHES || "")
+            const human = (process.env.GH_REQUIRED_HUMAN_REVIEWER || "").trim();
+            const enforcedBranches = (process.env.GH_ENFORCED_BASE_BRANCHES || "")
               .split(",")
               .map((b) => b.trim())
               .filter(Boolean);
@@ -122,9 +127,9 @@ jobs:
               candidates.push(human);
             }
 
-            const requestCopilot = String(process.env.REQUEST_COPILOT_REVIEW || "true").toLowerCase() === "true";
+            const requestCopilot = String(process.env.GH_REQUEST_COPILOT_REVIEW || "true").toLowerCase() === "true";
             if (requestCopilot) {
-              const copilotCandidates = (process.env.COPILOT_REVIEWER_CANDIDATES || "")
+              const copilotCandidates = (process.env.GH_COPILOT_REVIEWER_CANDIDATES || "")
                 .split(",")
                 .map((s) => s.trim())
                 .filter(Boolean);
@@ -348,27 +353,24 @@ jobs:
               "GET /repos/{owner}/{repo}/pulls/{pull_number}/commits",
               { owner, repo, pull_number: number, per_page: 100 }
             );
+            const headSha = commits.length > 0 ? commits[commits.length - 1].sha : "";
+            if (!headSha) {
+              core.setFailed(`Could not determine head commit SHA for PR #${number}.`);
+              return;
+            }
 
-            // Use route-based pagination (per AGENTS.md conventions)
+            // Use server-side ref scoping to reduce API volume on large repos.
             const alerts = await github.paginate(
               "GET /repos/{owner}/{repo}/code-scanning/alerts",
               {
                 owner,
                 repo,
                 state: "open",
+                ref: headSha,
                 per_page: 100,
               }
             );
-
-            // Note: code-scanning API does not support PR filtering; approximate by matching alert commit SHA to commits in this PR
-            const prCommitShas = new Set(commits.map((c) => c.sha));
-            const prAlerts = alerts.filter((a) => {
-              const alertSha =
-                a.most_recent_instance?.commit_sha ||
-                a.most_recent_instance?.ref?.split("/").pop() ||
-                "";
-              return prCommitShas.has(alertSha);
-            });
+            const prAlerts = alerts;
 
             await core.summary
               .addHeading("GHAS Gate (Code Scanning Alerts)")
