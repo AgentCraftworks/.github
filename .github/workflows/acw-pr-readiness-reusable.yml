@@ -60,14 +60,23 @@ jobs:
               return;
             }
 
+            const action = context.payload.action || "";
+
+            // Allow base-branch retargeting to trigger auto-request, but avoid running on
+            // unrelated edits (title/body/etc.).
+            if (action === "edited" && !context.payload.changes?.base?.ref) {
+              core.notice("Skipping reviewer auto-request for action 'edited' without base branch change.");
+              return;
+            }
+
             const allowedActions = new Set([
               "opened",
               "reopened",
               "synchronize",
               "ready_for_review",
               "review_requested",
+              "edited",
             ]);
-            const action = context.payload.action || "";
             if (!allowedActions.has(action)) {
               core.notice(
                 `Skipping reviewer auto-request for action '${action}'. Allowed actions: ${[...allowedActions].join(", ")}.`
