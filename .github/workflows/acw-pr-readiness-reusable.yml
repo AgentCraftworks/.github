@@ -115,12 +115,15 @@ jobs:
               }
 
               try {
-                await github.rest.pulls.requestReviewers({
-                  owner,
-                  repo,
-                  pull_number,
-                  reviewers: [reviewer],
-                });
+                await github.request(
+                  "POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers",
+                  {
+                    owner,
+                    repo,
+                    pull_number,
+                    reviewers: [reviewer],
+                  }
+                );
                 core.info(`Requested reviewer: ${reviewer}`);
               } catch (error) {
                 core.warning(`Could not request reviewer '${reviewer}': ${error.message}`);
