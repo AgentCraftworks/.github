@@ -169,16 +169,22 @@ jobs:
               per_page: 100,
             });
 
-            const latestStateByUser = new Map();
+            const latestReviewByUser = new Map();
             for (const review of reviews) {
               const user = (review.user?.login || "").toLowerCase();
               if (!user) continue;
-              latestStateByUser.set(user, review.state);
+
+              const prev = latestReviewByUser.get(user);
+              const prevAt = prev?.submitted_at ? new Date(prev.submitted_at) : new Date(0);
+              const curAt = review.submitted_at ? new Date(review.submitted_at) : new Date(0);
+
+              if (!prev || curAt > prevAt) {
+                latestReviewByUser.set(user, { state: review.state, submitted_at: review.submitted_at });
+              }
             }
 
-            const state = latestStateByUser.get(requiredReviewer);
+            const state = latestReviewByUser.get(requiredReviewer)?.state;
             const approved = state === "APPROVED";
-
             await core.summary
               .addHeading("Required Human Approval")
               .addRaw(`Base branch: ${baseRef}\n\n`)
