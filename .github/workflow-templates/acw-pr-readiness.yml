@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   pr-readiness:
-    uses: AgentCraftworks/.github/.github/workflows/acw-pr-readiness-reusable.yml@v1
+    uses: AgentCraftworks/.github/.github/workflows/acw-pr-readiness-reusable.yml@main
     with:
       required_human_reviewer: jenperret
       enforced_base_branches: staging,main
