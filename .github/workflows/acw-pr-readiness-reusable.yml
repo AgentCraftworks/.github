@@ -44,6 +44,7 @@ jobs:
         uses: actions/github-script@v8
         env:
           REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
+          ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
           REQUEST_COPILOT_REVIEW: ${{ inputs.request_copilot_review }}
           COPILOT_REVIEWER_CANDIDATES: ${{ inputs.copilot_reviewer_candidates }}
         with:
