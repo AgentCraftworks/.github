@@ -385,7 +385,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    # Only run on pull_request events; dependency changes only occur in PR code
+    # Run when invoked for PR context (direct pull_request runs or workflow_call from a PR-triggered caller)
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_call' }}
     steps:
       - name: Checkout
