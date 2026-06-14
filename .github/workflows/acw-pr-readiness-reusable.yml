@@ -1,3 +1,8 @@
+# T3: Workflow with write access to pull requests and issues.
+# Orchestrates PR readiness gates: required approver, review feedback, GHAS, dependency review.
+# On gate failure, escalates with label + notification for human decision.
+# See: .github/copilot/instructions.md (engagement levels), .github/AGENTS.md (Octokit conventions).
+
 name: acw-pr-readiness-reusable
 
 on:
@@ -28,6 +33,13 @@ on:
         required: false
         type: string
         default: needs-human-decision
+    secrets:
+      GITHUB_APP_ID:
+        description: GitHub App ID for authenticated write operations (optional; defaults to GITHUB_TOKEN).
+        required: false
+      GITHUB_APP_PRIVATE_KEY:
+        description: GitHub App private key for authenticated write operations (optional; defaults to GITHUB_TOKEN).
+        required: false
 
 permissions:
   contents: read
@@ -40,13 +52,24 @@ jobs:
     name: Request Copilot + human reviewer
     runs-on: ubuntu-latest
     steps:
+      - name: Generate app token (if secrets provided)
+        id: app-token
+        if: ${{ secrets.GITHUB_APP_ID != '' && secrets.GITHUB_APP_PRIVATE_KEY != '' }}
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GITHUB_APP_ID }}
+          private-key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+
       - name: Request reviewers
         uses: actions/github-script@v8
         env:
           REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
+          ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
           REQUEST_COPILOT_REVIEW: ${{ inputs.request_copilot_review }}
           COPILOT_REVIEWER_CANDIDATES: ${{ inputs.copilot_reviewer_candidates }}
+          GITHUB_TOKEN_OVERRIDE: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
         with:
+          github-token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           script: |
             const pr = context.payload.pull_request;
             if (!pr) {
@@ -78,14 +101,27 @@ jobs:
             const repo = context.repo.repo;
             const pull_number = pr.number;
 
-            const current = await github.rest.pulls.get({ owner, repo, pull_number });
+            // Use route-based request (per AGENTS.md conventions)
+            const current = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+              owner,
+              repo,
+              pull_number,
+            });
             const requested = new Set(
               (current.data.requested_reviewers || []).map((r) => r.login.toLowerCase())
             );
 
             const candidates = [];
             const human = (process.env.REQUIRED_HUMAN_REVIEWER || "").trim();
-            if (human) candidates.push(human);
+            const enforcedBranches = (process.env.ENFORCED_BASE_BRANCHES || "")
+              .split(",")
+              .map((b) => b.trim())
+              .filter(Boolean);
+
+            // Only request human reviewer if base branch is enforced
+            if (human && enforcedBranches.includes(pr.base?.ref || "")) {
+              candidates.push(human);
+            }
 
             const requestCopilot = String(process.env.REQUEST_COPILOT_REVIEW || "true").toLowerCase() === "true";
             if (requestCopilot) {
@@ -104,13 +140,14 @@ jobs:
               }
 
               try {
-                await github.rest.pulls.requestReviewers({
+                await github.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", {
                   owner,
                   repo,
                   pull_number,
                   reviewers: [reviewer],
                 });
                 core.info(`Requested reviewer: ${reviewer}`);
+                requested.add(key); // Mark as requested to avoid duplicates in this run
               } catch (error) {
                 core.warning(`Could not request reviewer '${reviewer}': ${error.message}`);
               }
@@ -122,10 +159,8 @@ jobs:
     steps:
       - name: Check required approval for protected base branches
         uses: actions/github-script@v8
-        env:
-          REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
-          ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const pr = context.payload.pull_request;
             if (!pr) {
@@ -133,13 +168,13 @@ jobs:
               return;
             }
 
-            const requiredReviewer = (process.env.REQUIRED_HUMAN_REVIEWER || "").trim().toLowerCase();
+            const requiredReviewer = "${{ inputs.required_human_reviewer }}".trim().toLowerCase();
             if (!requiredReviewer) {
               core.notice("No required_human_reviewer configured. Skipping.");
               return;
             }
 
-            const enforcedBranches = (process.env.ENFORCED_BASE_BRANCHES || "")
+            const enforcedBranches = "${{ inputs.enforced_base_branches }}"
               .split(",")
               .map((b) => b.trim())
               .filter(Boolean);
@@ -154,33 +189,43 @@ jobs:
             const repo = context.repo.repo;
             const pull_number = pr.number;
 
-            const reviews = await github.paginate(github.rest.pulls.listReviews, {
-              owner,
-              repo,
-              pull_number,
-              per_page: 100,
-            });
+            // Use route-based pagination (per AGENTS.md conventions)
+            const reviews = await github.paginate(
+              "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+              {
+                owner,
+                repo,
+                pull_number,
+                per_page: 100,
+              }
+            );
 
+            // Find latest review per user by submitted_at (stable, not implicit ordering)
             const latestStateByUser = new Map();
             for (const review of reviews) {
               const user = (review.user?.login || "").toLowerCase();
               if (!user) continue;
-              latestStateByUser.set(user, review.state);
+              const current = latestStateByUser.get(user);
+              // Update if this is the first review for this user or newer than current
+              if (!current || new Date(review.submitted_at) > new Date(current.submitted_at)) {
+                latestStateByUser.set(user, review);
+              }
             }
 
-            const state = latestStateByUser.get(requiredReviewer);
+            const reviewerData = latestStateByUser.get(requiredReviewer);
+            const state = reviewerData?.state || "none";
             const approved = state === "APPROVED";
 
             await core.summary
               .addHeading("Required Human Approval")
               .addRaw(`Base branch: ${baseRef}\n\n`)
               .addRaw(`Required reviewer: ${requiredReviewer}\n\n`)
-              .addRaw(`Latest review state: ${state || "none"}\n\n`)
+              .addRaw(`Latest review state: ${state}\n\n`)
               .write();
 
             if (!approved) {
               core.setFailed(
-                `PRs targeting '${baseRef}' require APPROVED review from '${requiredReviewer}'. Current state: ${state || "none"}.`
+                `PRs targeting '${baseRef}' require APPROVED review from '${requiredReviewer}'. Current state: ${state}.`
               );
             }
 
@@ -248,6 +293,8 @@ jobs:
   ghas-gate:
     name: Validate GHAS code scanning alerts
     runs-on: ubuntu-latest
+    # Only run on pull_request events; code-scanning alerts only change when code changes
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_call' }}
     steps:
       - name: Fail when open code scanning alerts exist for this PR
         uses: actions/github-script@v8
@@ -263,24 +310,31 @@ jobs:
             const repo = context.repo.repo;
             const number = pr.number;
 
+            // Use route-based pagination (per AGENTS.md conventions)
             const alerts = await github.paginate(
               "GET /repos/{owner}/{repo}/code-scanning/alerts",
               {
                 owner,
                 repo,
                 state: "open",
-                pr: number,
                 per_page: 100,
               }
             );
 
+            // Note: code-scanning API does not support PR filtering; manually filter by commit SHAs in PR
+            const prCommitShas = new Set(pr.commits?.map((c) => c.id) || []);
+            const prAlerts = alerts.filter((a) => {
+              const alertSha = a.most_recent_instance?.ref?.split("/").pop() || "";
+              return prCommitShas.has(alertSha);
+            });
+
             await core.summary
-              .addHeading("GHAS Gate")
-              .addRaw(`Open code scanning alerts for PR #${number}: ${alerts.length}\n\n`)
+              .addHeading("GHAS Gate (Code Scanning Alerts)")
+              .addRaw(`Open code scanning alerts for PR #${number}: ${prAlerts.length}\n\n`)
               .write();
 
-            if (alerts.length > 0) {
-              const details = alerts
+            if (prAlerts.length > 0) {
+              const details = prAlerts
                 .slice(0, 20)
                 .map((a) => {
                   const rule = a.rule?.id || a.rule?.name || "unknown-rule";
@@ -290,12 +344,14 @@ jobs:
                 })
                 .join("\n");
 
-              core.setFailed(`Open GHAS code scanning alerts found (${alerts.length}).\n${details}`);
+              core.setFailed(`Open GHAS code scanning alerts found (${prAlerts.length}).\n${details}`);
             }
 
   dependency-review-gate:
     name: Validate dependency vulnerabilities
     runs-on: ubuntu-latest
+    # Only run on pull_request events; dependency changes only occur in PR code
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_call' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -317,10 +373,8 @@ jobs:
     steps:
       - name: Label and notify when any gate is failing
         uses: actions/github-script@v8
-        env:
-          REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
-          ESCALATION_LABEL: ${{ inputs.escalation_label }}
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const pr = context.payload.pull_request;
             if (!pr) {
@@ -332,19 +386,37 @@ jobs:
               .filter(([, value]) => value.result === "failure")
               .map(([key]) => key);
 
-            if (failing.length === 0) {
-              core.info("No failing gates. Escalation not required.");
-              return;
-            }
-
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const issue_number = pr.number;
-            const label = (process.env.ESCALATION_LABEL || "needs-human-decision").trim();
-            const reviewer = (process.env.REQUIRED_HUMAN_REVIEWER || "").trim();
+            const label = "${{ inputs.escalation_label }}".trim();
+            const reviewer = "${{ inputs.required_human_reviewer }}".trim();
 
+            if (failing.length === 0) {
+              // Clean up escalation label when all gates pass
+              try {
+                await github.request("DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}", {
+                  owner,
+                  repo,
+                  issue_number,
+                  name: label,
+                });
+                core.info(`Removed escalation label '${label}' (all gates passing).`);
+              } catch (error) {
+                // Label might not exist; that's fine
+                if (error.status !== 404) {
+                  core.warning(`Could not remove label '${label}': ${error.message}`);
+                }
+              }
+              return;
+            }
+
+            // Some gates are failing; escalate
+            core.info("No failing gates. Escalation not required.");
+
+            // Add escalation label
             try {
-              await github.rest.issues.addLabels({
+              await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/labels", {
                 owner,
                 repo,
                 issue_number,
@@ -354,19 +426,37 @@ jobs:
               core.warning(`Could not add label '${label}': ${error.message}`);
             }
 
+            // Only request reviewer if they haven't already APPROVED
             if (reviewer) {
               try {
-                await github.rest.pulls.requestReviewers({
-                  owner,
-                  repo,
-                  pull_number: issue_number,
-                  reviewers: [reviewer],
-                });
+                const reviews = await github.paginate(
+                  "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+                  { owner, repo, pull_number: issue_number, per_page: 100 }
+                );
+
+                const reviewerLower = reviewer.toLowerCase();
+                const reviewerData = reviews.find(
+                  (r) => (r.user?.login || "").toLowerCase() === reviewerLower
+                );
+                const latestState = reviewerData?.state;
+
+                if (latestState === "APPROVED") {
+                  core.info(`Reviewer '${reviewer}' already approved. Skipping re-request.`);
+                } else {
+                  await github.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", {
+                    owner,
+                    repo,
+                    pull_number: issue_number,
+                    reviewers: [reviewer],
+                  });
+                  core.info(`Requested reviewer: ${reviewer}`);
+                }
               } catch (error) {
                 core.warning(`Could not request reviewer '${reviewer}': ${error.message}`);
               }
             }
 
+            // Post escalation comment with try/catch (may fail on fork PRs without issues:write)
             const body = [
               "Escalating for human decision due to unresolved quality/security findings.",
               "",
@@ -375,9 +465,13 @@ jobs:
               `@${reviewer || "jenperret"} please review and decide on remediation path.`,
             ].join("\n");
 
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number,
-              body,
-            });
+            try {
+              await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            } catch (error) {
+              core.warning(`Could not post escalation comment: ${error.message}`);
+            }
