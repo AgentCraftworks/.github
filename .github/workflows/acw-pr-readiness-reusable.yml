@@ -316,7 +316,7 @@ jobs:
       contents: read
       pull-requests: read
       security-events: read
-    # Only run on pull_request events; code-scanning alerts only change when code changes
+    # Run when invoked for PR context (direct pull_request runs or workflow_call from a PR-triggered caller)
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_call' }}
     steps:
       - name: Generate app token
