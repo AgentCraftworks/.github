@@ -343,6 +343,18 @@ jobs:
 
             if (failing.length === 0) {
               core.info("No failing gates. Escalation not required.");
+
+              const owner = context.repo.owner;
+              const repo = context.repo.repo;
+              const issue_number = pr.number;
+              const label = (process.env.ESCALATION_LABEL || "needs-human-decision").trim();
+
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number, name: label });
+              } catch (_) {
+                // Ignore missing label / insufficient permissions.
+              }
+
               return;
             }
 
