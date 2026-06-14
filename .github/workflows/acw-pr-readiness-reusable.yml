@@ -394,12 +394,10 @@ jobs:
             }
 
             if (reviewer) {
-              const reviews = await github.paginate(github.rest.pulls.listReviews, {
-                owner,
-                repo,
-                pull_number: issue_number,
-                per_page: 100,
-              });
+              const reviews = await github.paginate(
+                "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+                { owner, repo, pull_number: issue_number, per_page: 100 }
+              );
 
               const latestReviewByUser = new Map();
               for (const review of reviews) {
