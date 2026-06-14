@@ -85,8 +85,15 @@ jobs:
             );
 
             const candidates = [];
+
+            const enforcedBranches = (process.env.ENFORCED_BASE_BRANCHES || "")
+              .split(",")
+              .map((b) => b.trim())
+              .filter(Boolean);
+            const baseRef = pr.base?.ref || "";
+
             const human = (process.env.REQUIRED_HUMAN_REVIEWER || "").trim();
-            if (human) candidates.push(human);
+            if (human && enforcedBranches.includes(baseRef)) candidates.push(human);
 
             const requestCopilot = String(process.env.REQUEST_COPILOT_REVIEW || "true").toLowerCase() === "true";
             if (requestCopilot) {
