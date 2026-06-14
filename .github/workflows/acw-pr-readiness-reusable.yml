@@ -262,6 +262,7 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const number = pr.number;
+            const ref = `refs/heads/${pr.base.ref}`;
 
             const alerts = await github.paginate(
               "GET /repos/{owner}/{repo}/code-scanning/alerts",
@@ -269,14 +270,14 @@ jobs:
                 owner,
                 repo,
                 state: "open",
-                pr: number,
+                ref,
                 per_page: 100,
               }
             );
 
             await core.summary
               .addHeading("GHAS Gate")
-              .addRaw(`Open code scanning alerts for PR #${number}: ${alerts.length}\n\n`)
+              .addRaw(`Open code scanning alerts for ${ref} (PR #${number}): ${alerts.length}\n\n`)
               .write();
 
             if (alerts.length > 0) {
