@@ -357,12 +357,13 @@ jobs:
               }
             );
 
-            // Note: code-scanning API does not support PR filtering; manually filter by commit SHAs in PR
-            const prCommitShas = new Set(pr.commits?.map((c) => c.id) || []);
-            const prAlerts = alerts.filter((a) => {
-              const alertSha = a.most_recent_instance?.ref?.split("/").pop() || "";
-              return prCommitShas.has(alertSha);
-            });
+            // Note: code-scanning API does not support PR filtering; approximate by matching alert instance commit_sha to commits in this PR
+            const prCommits = await github.paginate(
+              "GET /repos/{owner}/{repo}/pulls/{pull_number}/commits",
+              { owner, repo, pull_number: number, per_page: 100 }
+            );
+            const prCommitShas = new Set(prCommits.map((c) => c.sha));
+            const prAlerts = alerts.filter((a) => prCommitShas.has(a.most_recent_instance?.commit_sha || ""));
 
             await core.summary
               .addHeading("GHAS Gate (Code Scanning Alerts)")
