@@ -257,7 +257,7 @@ jobs:
     name: Validate GHAS code scanning alerts
     runs-on: ubuntu-latest
     steps:
-      - name: Fail when open code scanning alerts exist for this PR
+      - name: Fail when open code scanning alerts exist for the base branch
         uses: actions/github-script@v8
         with:
           script: |
