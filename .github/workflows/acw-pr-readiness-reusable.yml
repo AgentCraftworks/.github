@@ -438,9 +438,7 @@ jobs:
               `@${reviewer || "jenperret"} please review and decide on remediation path.`,
             ].join("\n");
 
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number,
-              body,
-            });
+            await github.request(
+              "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+              { owner, repo, issue_number, body }
+            );
