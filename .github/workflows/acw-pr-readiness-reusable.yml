@@ -40,26 +40,25 @@ on:
         default: needs-human-decision
     secrets:
       GITHUB_APP_ID:
-        description: GitHub App ID for authenticated write operations (optional; defaults to GITHUB_TOKEN).
-        required: false
+        description: GitHub App ID for authenticated operations.
+        required: true
       GITHUB_APP_PRIVATE_KEY:
-        description: GitHub App private key for authenticated write operations (optional; defaults to GITHUB_TOKEN).
-        required: false
+        description: GitHub App private key for authenticated operations.
+        required: true
 
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
-  security-events: read
 
 jobs:
   request-reviewers:
     name: Request Copilot + human reviewer
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
-      - name: Generate app token (if secrets provided)
+      - name: Generate app token
         id: app-token
-        if: ${{ secrets.GITHUB_APP_ID != '' && secrets.GITHUB_APP_PRIVATE_KEY != '' }}
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.GITHUB_APP_ID }}
@@ -72,9 +71,8 @@ jobs:
           ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
           REQUEST_COPILOT_REVIEW: ${{ inputs.request_copilot_review }}
           COPILOT_REVIEWER_CANDIDATES: ${{ inputs.copilot_reviewer_candidates }}
-          GITHUB_TOKEN_OVERRIDE: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
         with:
-          github-token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const pr = context.payload.pull_request;
             if (!pr) {
@@ -161,11 +159,21 @@ jobs:
   required-human-approval:
     name: Validate required human approver
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GITHUB_APP_ID }}
+          private-key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+
       - name: Check required approval for protected base branches
         uses: actions/github-script@v8
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const pr = context.payload.pull_request;
             if (!pr) {
@@ -237,10 +245,21 @@ jobs:
   review-feedback-gate:
     name: Validate unresolved review threads
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GITHUB_APP_ID }}
+          private-key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+
       - name: Fail when unresolved review threads exist
         uses: actions/github-script@v8
         with:
+          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const pr = context.payload.pull_request;
             if (!pr) {
@@ -298,12 +317,24 @@ jobs:
   ghas-gate:
     name: Validate GHAS code scanning alerts
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      security-events: read
     # Only run on pull_request events; code-scanning alerts only change when code changes
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_call' }}
     steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GITHUB_APP_ID }}
+          private-key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+
       - name: Fail when open code scanning alerts exist for this PR
         uses: actions/github-script@v8
         with:
+          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const pr = context.payload.pull_request;
             if (!pr) {
@@ -355,6 +386,9 @@ jobs:
   dependency-review-gate:
     name: Validate dependency vulnerabilities
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     # Only run on pull_request events; dependency changes only occur in PR code
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_call' }}
     steps:
@@ -369,6 +403,10 @@ jobs:
   escalate-human-decision:
     name: Escalate unresolved findings for human decision
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
     needs:
       - required-human-approval
       - review-feedback-gate
@@ -376,10 +414,17 @@ jobs:
       - dependency-review-gate
     if: ${{ always() }}
     steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GITHUB_APP_ID }}
+          private-key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+
       - name: Label and notify when any gate is failing
         uses: actions/github-script@v8
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const pr = context.payload.pull_request;
             if (!pr) {
@@ -417,7 +462,7 @@ jobs:
             }
 
             // Some gates are failing; escalate
-            core.info("No failing gates. Escalation not required.");
+            core.info(`Escalating due to failing gates: ${failing.join(", ")}`);
 
             // Add escalation label
             try {
