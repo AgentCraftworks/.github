@@ -54,6 +54,7 @@ jobs:
   request-reviewers:
     name: Request Copilot + human reviewer
     runs-on: ubuntu-latest
+    if: ${{ contains(fromJson('["opened","reopened","synchronize","ready_for_review","review_requested"]'), inputs.trigger_action) }}
     permissions:
       contents: read
       pull-requests: write
