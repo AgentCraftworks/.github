@@ -86,18 +86,7 @@ jobs:
               return;
             }
 
-            const current = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
-              owner,
-              repo,
-              pull_number,
-            });
-            const pr = current.data;
-
-            if (pr.draft) {
-              core.notice(`PR #${pr.number} is draft. Waiting for ready_for_review.`);
-              return;
-            }
-
+            // Gate on allowed actions before making any API calls.
             const allowedActions = new Set([
               "opened",
               "reopened",
@@ -110,6 +99,18 @@ jobs:
               core.notice(
                 `Skipping reviewer auto-request for action '${action}'. Allowed actions: ${[...allowedActions].join(", ")}.`
               );
+              return;
+            }
+
+            const current = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+              owner,
+              repo,
+              pull_number,
+            });
+            const pr = current.data;
+
+            if (pr.draft) {
+              core.notice(`PR #${pr.number} is draft. Waiting for ready_for_review.`);
               return;
             }
             const requested = new Set(
