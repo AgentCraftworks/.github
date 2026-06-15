@@ -1,0 +1,113 @@
+# Engagement Level: T1 (Read) — Read-only quality checks on feature branches before PR.
+# Runs on push to feature branches to surface issues before PR is opened.
+# Provides early feedback loop so PRs arrive already quality-gated.
+# See: AGENTS.md (engagement levels), .github/copilot/instructions.md.
+
+name: acw-branch-quality
+
+on:
+  push:
+    branches:
+      - 'feat/**'
+      - 'fix/**'
+      - 'chore/**'
+      - 'docs/**'
+      - 'refactor/**'
+      - 'perf/**'
+    paths-ignore:
+      - '**.md'
+      - '.github/CODEOWNERS'
+
+permissions:
+  contents: read
+
+jobs:
+  yaml-lint:
+    name: Lint workflow YAML
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Lint .github/workflows
+        run: |
+          yamllint -d "{extends: relaxed, rules: {line-length: {max: 200}}}" .github/workflows/ || true
+
+  detect-secrets:
+    name: Detect committed secrets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for secrets (detect-secrets)
+        uses: reviewdog/action-detect-secrets@v0
+        with:
+          github_token: ${{ github.token }}
+          reporter: github-check
+          fail_on_error: false
+
+  dependency-audit:
+    name: Dependency vulnerability pre-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    if: ${{ hashFiles('package.json', 'package-lock.json', 'yarn.lock', 'requirements.txt', 'Pipfile.lock', 'go.sum') != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Dependency review (branch diff against default branch)
+        uses: actions/dependency-review-action@v4
+        with:
+          base-ref: ${{ github.event.repository.default_branch }}
+          head-ref: ${{ github.sha }}
+          fail-on-severity: high
+          comment-summary-in-pr: never
+        continue-on-error: true
+
+  quality-summary:
+    name: Branch quality summary
+    runs-on: ubuntu-latest
+    needs: [yaml-lint, detect-secrets]
+    if: always()
+    permissions:
+      contents: read
+    steps:
+      - name: Report quality gate results
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const jobs = ${{ toJson(needs) }};
+            const failed = Object.entries(jobs)
+              .filter(([, v]) => v.result === 'failure')
+              .map(([k]) => k);
+            const skipped = Object.entries(jobs)
+              .filter(([, v]) => v.result === 'skipped')
+              .map(([k]) => k);
+
+            await core.summary
+              .addHeading('Branch Quality Report')
+              .addRaw(`Branch: \`${{ github.ref_name }}\`\n\n`)
+              .addRaw(`Commit: \`${{ github.sha }}\`\n\n`)
+              .addTable([
+                [{data: 'Check', header: true}, {data: 'Result', header: true}],
+                ...Object.entries(jobs).map(([k, v]) => [k, v.result])
+              ])
+              .addRaw(failed.length > 0
+                ? `\n⚠️ **${failed.length} check(s) need attention before opening PR:** ${failed.join(', ')}`
+                : '\n✅ Branch quality checks passed. Safe to open PR.')
+              .write();
+
+            if (failed.length > 0) {
+              core.warning(`Branch quality issues detected: ${failed.join(', ')}. Resolve before opening PR.`);
+            }

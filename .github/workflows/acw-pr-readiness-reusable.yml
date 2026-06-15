@@ -113,6 +113,17 @@ jobs:
               core.notice(`PR #${pr.number} is draft. Waiting for ready_for_review.`);
               return;
             }
+
+            // Fetch existing reviews to suppress Copilot re-request after first pass.
+            // Copilot review is only requested if it has never submitted a review on this PR.
+            const existingReviews = await github.paginate(
+              "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+              { owner, repo, pull_number, per_page: 100 }
+            );
+            const reviewersThatReviewed = new Set(
+              existingReviews.map((r) => (r.user?.login || "").toLowerCase())
+            );
+
             const requested = new Set(
               (current.data.requested_reviewers || []).map((r) => r.login.toLowerCase())
             );
@@ -135,7 +146,17 @@ jobs:
                 .split(",")
                 .map((s) => s.trim())
                 .filter(Boolean);
-              candidates.push(...copilotCandidates);
+              // Only add Copilot candidates that have NOT already submitted a review.
+              // This prevents re-triggering the review loop on every synchronize event.
+              const freshCopilotCandidates = copilotCandidates.filter(
+                (c) => !reviewersThatReviewed.has(c.toLowerCase())
+              );
+              if (freshCopilotCandidates.length < copilotCandidates.length) {
+                core.info(
+                  `Copilot has already reviewed this PR. Skipping re-request to prevent review loop.`
+                );
+              }
+              candidates.push(...freshCopilotCandidates);
             }
 
             for (const reviewer of candidates) {
