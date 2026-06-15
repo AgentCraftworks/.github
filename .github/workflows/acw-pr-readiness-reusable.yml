@@ -49,6 +49,9 @@ on:
         default: needs-human-decision
 permissions:
   contents: read
+  pull-requests: write
+  issues: write
+  security-events: read
 
 jobs:
   request-reviewers:
