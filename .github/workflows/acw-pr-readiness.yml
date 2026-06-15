@@ -24,7 +24,7 @@ permissions:
   issues: write
 jobs:
   pr-readiness:
-    uses: ./.github/workflows/acw-pr-readiness-reusable.yml
+    uses: AgentCraftworks/.github/.github/workflows/acw-pr-readiness-reusable.yml@main
     with:
       pull_number: ${{ github.event.pull_request.number }}
       trigger_action: ${{ github.event.action }}
