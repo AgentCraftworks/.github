@@ -36,7 +36,7 @@ jobs:
 
       - name: Lint .github/workflows
         run: |
-          yamllint -d "{extends: relaxed, rules: {line-length: {max: 200}}}" .github/workflows/ || true
+          yamllint -d "{extends: relaxed, rules: {line-length: {max: 200}}}" .github/workflows/
 
   detect-secrets:
     name: Detect committed secrets
