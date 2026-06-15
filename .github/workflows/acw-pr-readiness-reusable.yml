@@ -260,6 +260,7 @@ jobs:
             const reviewerData = latestStateByUser.get(requiredReviewer);
             const state = reviewerData?.state || "none";
             const approved = state === "APPROVED";
+            const triggerAction = "${{ inputs.trigger_action }}".trim().toLowerCase();
 
             await core.summary
               .addHeading("Required Human Approval")
@@ -269,6 +270,15 @@ jobs:
               .write();
 
             if (!approved) {
+              // Don't fail on PR sync/edit cycles where stale-review dismissal is expected.
+              // GitHub branch protection still enforces approval before merge.
+              const softGateActions = new Set(["opened", "reopened", "synchronize", "edited", "review_requested"]);
+              if (softGateActions.has(triggerAction)) {
+                core.notice(
+                  `Approval gate is pending after '${triggerAction}'. Current state: ${state}. Waiting for fresh approval.`
+                );
+                return;
+              }
               core.setFailed(
                 `PRs targeting '${baseRef}' require APPROVED review from '${requiredReviewer}'. Current state: ${state}.`
               );
