@@ -558,22 +558,32 @@ jobs:
               }
             }
 
-            // Post escalation comment with try/catch (may fail on fork PRs without issues:write)
-            const body = [
-              "Escalating for human decision due to unresolved quality/security findings.",
-              "",
-              `Failing gates: ${failing.join(", ")}`,
-              "",
-              `@${reviewer || "jenperret"} please review and decide on remediation path.`,
-            ].join("\n");
+            const alreadyEscalated = (pr.labels || []).some(
+              (l) => (l.name || "").toLowerCase() === label.toLowerCase()
+            );
 
-            try {
-              await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
-                owner,
-                repo,
-                issue_number,
-                body,
-              });
-            } catch (error) {
+            if (alreadyEscalated) {
+              core.info(`Escalation label '${label}' already present. Skipping escalation comment.`);
+            } else {
+              // Post escalation comment with try/catch (may fail on fork PRs without issues:write)
+              const body = [
+                "Escalating for human decision due to unresolved quality/security findings.",
+                "",
+                `Failing gates: ${failing.join(", ")}`,
+                "",
+                `@${reviewer || "jenperret"} please review and decide on remediation path.`,
+              ].join("\n");
+
+              try {
+                await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
+                  owner,
+                  repo,
+                  issue_number,
+                  body,
+                });
+              } catch (error) {
+                core.warning(`Could not post escalation comment: ${error.message}`);
+              }
+            }
               core.warning(`Could not post escalation comment: ${error.message}`);
             }
