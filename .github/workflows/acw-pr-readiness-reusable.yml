@@ -515,9 +515,13 @@ jobs:
               return;
             }
 
+            if (pr.draft) {
+              core.info(`PR #${issue_number} is draft. Skipping escalation/notifications until ready_for_review.`);
+              return;
+            }
+
             // Some gates are failing; escalate
             core.info(`Escalating due to failing gates: ${failing.join(", ")}`);
-
             // Add escalation label
             try {
               await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/labels", {
