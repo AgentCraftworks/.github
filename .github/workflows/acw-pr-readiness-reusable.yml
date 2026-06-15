@@ -9,9 +9,9 @@ on:
   workflow_call:
     secrets:
       GH_APP_ID:
-        required: true
+        required: false
       GH_APP_PRIVATE_KEY:
-        required: true
+        required: false
     inputs:
       pull_number:
         description: Pull request number from caller workflow.
@@ -60,6 +60,7 @@ jobs:
     steps:
       - name: Generate app token
         id: app-token
+        if: ${{ secrets.GH_APP_ID != '' && secrets.GH_APP_PRIVATE_KEY != '' }}
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.GH_APP_ID }}
@@ -75,7 +76,7 @@ jobs:
           GH_REQUEST_COPILOT_REVIEW: ${{ inputs.request_copilot_review }}
           GH_COPILOT_REVIEWER_CANDIDATES: ${{ inputs.copilot_reviewer_candidates }}
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
@@ -166,6 +167,7 @@ jobs:
     steps:
       - name: Generate app token
         id: app-token
+        if: ${{ secrets.GH_APP_ID != '' && secrets.GH_APP_PRIVATE_KEY != '' }}
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.GH_APP_ID }}
@@ -174,7 +176,7 @@ jobs:
       - name: Check required approval for protected base branches
         uses: actions/github-script@v8
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
@@ -257,6 +259,7 @@ jobs:
     steps:
       - name: Generate app token
         id: app-token
+        if: ${{ secrets.GH_APP_ID != '' && secrets.GH_APP_PRIVATE_KEY != '' }}
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.GH_APP_ID }}
@@ -265,7 +268,7 @@ jobs:
       - name: Fail when unresolved review threads exist
         uses: actions/github-script@v8
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
           script: |
             const number = Number("${{ inputs.pull_number }}");
             if (!number) {
@@ -331,6 +334,7 @@ jobs:
     steps:
       - name: Generate app token
         id: app-token
+        if: ${{ secrets.GH_APP_ID != '' && secrets.GH_APP_PRIVATE_KEY != '' }}
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.GH_APP_ID }}
@@ -339,7 +343,7 @@ jobs:
       - name: Fail when open code scanning alerts exist for this PR
         uses: actions/github-script@v8
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
           script: |
             const number = Number("${{ inputs.pull_number }}");
             if (!number) {
@@ -424,6 +428,7 @@ jobs:
     steps:
       - name: Generate app token
         id: app-token
+        if: ${{ secrets.GH_APP_ID != '' && secrets.GH_APP_PRIVATE_KEY != '' }}
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.GH_APP_ID }}
@@ -432,7 +437,7 @@ jobs:
       - name: Label and notify when any gate is failing
         uses: actions/github-script@v8
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
           script: |
             const issue_number = Number("${{ inputs.pull_number }}");
             if (!issue_number) {
