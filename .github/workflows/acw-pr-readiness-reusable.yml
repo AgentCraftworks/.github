@@ -587,5 +587,4 @@ jobs:
                 core.warning(`Could not post escalation comment: ${error.message}`);
               }
             }
-              core.warning(`Could not post escalation comment: ${error.message}`);
-            }
+              // (removed duplicate warning / extra brace)
