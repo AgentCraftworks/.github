@@ -22,9 +22,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
-  security-events: read
 
 jobs:
   pr-readiness:
