@@ -49,6 +49,9 @@ on:
         default: needs-human-decision
 permissions:
   contents: read
+  pull-requests: write
+  issues: write
+  security-events: read
 
 jobs:
   request-reviewers:
@@ -113,6 +116,17 @@ jobs:
               core.notice(`PR #${pr.number} is draft. Waiting for ready_for_review.`);
               return;
             }
+
+            // Fetch existing reviews to suppress Copilot re-request after first pass.
+            // Copilot review is only requested if it has never submitted a review on this PR.
+            const existingReviews = await github.paginate(
+              "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+              { owner, repo, pull_number, per_page: 100 }
+            );
+            const reviewersThatReviewed = new Set(
+              existingReviews.map((r) => (r.user?.login || "").toLowerCase())
+            );
+
             const requested = new Set(
               (current.data.requested_reviewers || []).map((r) => r.login.toLowerCase())
             );
@@ -135,7 +149,17 @@ jobs:
                 .split(",")
                 .map((s) => s.trim())
                 .filter(Boolean);
-              candidates.push(...copilotCandidates);
+              // Only add Copilot candidates that have NOT already submitted a review.
+              // This prevents re-triggering the review loop on every synchronize event.
+              const freshCopilotCandidates = copilotCandidates.filter(
+                (c) => !reviewersThatReviewed.has(c.toLowerCase())
+              );
+              if (freshCopilotCandidates.length < copilotCandidates.length) {
+                core.info(
+                  `Copilot has already reviewed this PR. Skipping re-request to prevent review loop.`
+                );
+              }
+              candidates.push(...freshCopilotCandidates);
             }
 
             for (const reviewer of candidates) {
@@ -160,7 +184,7 @@ jobs:
             }
 
   required-human-approval:
-    name: Validate required human approver
+    name: required-human-approval
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -236,6 +260,7 @@ jobs:
             const reviewerData = latestStateByUser.get(requiredReviewer);
             const state = reviewerData?.state || "none";
             const approved = state === "APPROVED";
+            const triggerAction = "${{ inputs.trigger_action }}".trim().toLowerCase();
 
             await core.summary
               .addHeading("Required Human Approval")
@@ -245,13 +270,22 @@ jobs:
               .write();
 
             if (!approved) {
+              // Don't fail on PR sync/edit cycles where stale-review dismissal is expected.
+              // GitHub branch protection still enforces approval before merge.
+              const softGateActions = new Set(["opened", "reopened", "synchronize", "edited", "review_requested"]);
+              if (softGateActions.has(triggerAction)) {
+                core.notice(
+                  `Approval gate is pending after '${triggerAction}'. Current state: ${state}. Waiting for fresh approval.`
+                );
+                return;
+              }
               core.setFailed(
                 `PRs targeting '${baseRef}' require APPROVED review from '${requiredReviewer}'. Current state: ${state}.`
               );
             }
 
   review-feedback-gate:
-    name: Validate unresolved review threads
+    name: review-feedback-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -322,7 +356,7 @@ jobs:
             }
 
   ghas-gate:
-    name: Validate GHAS code scanning alerts
+    name: ghas-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -412,7 +446,7 @@ jobs:
             }
 
   dependency-review-gate:
-    name: Validate dependency vulnerabilities
+    name: dependency-review-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -494,9 +528,13 @@ jobs:
               return;
             }
 
+            if (pr.draft) {
+              core.info(`PR #${issue_number} is draft. Skipping escalation/notifications until ready_for_review.`);
+              return;
+            }
+
             // Some gates are failing; escalate
             core.info(`Escalating due to failing gates: ${failing.join(", ")}`);
-
             // Add escalation label
             try {
               await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/labels", {
