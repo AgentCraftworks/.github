@@ -184,7 +184,7 @@ jobs:
             }
 
   required-human-approval:
-    name: Validate required human approver
+    name: required-human-approval
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -275,7 +275,7 @@ jobs:
             }
 
   review-feedback-gate:
-    name: Validate unresolved review threads
+    name: review-feedback-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -346,7 +346,7 @@ jobs:
             }
 
   ghas-gate:
-    name: Validate GHAS code scanning alerts
+    name: ghas-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -436,7 +436,7 @@ jobs:
             }
 
   dependency-review-gate:
-    name: Validate dependency vulnerabilities
+    name: dependency-review-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
