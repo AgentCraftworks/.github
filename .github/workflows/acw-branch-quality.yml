@@ -64,7 +64,7 @@ jobs:
     if: ${{ hashFiles('package.json', 'package-lock.json', 'yarn.lock', 'requirements.txt', 'Pipfile.lock', 'go.sum') != '' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Dependency review (branch diff against default branch)
         uses: actions/dependency-review-action@v4
