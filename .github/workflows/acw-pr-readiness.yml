@@ -1,0 +1,37 @@
+# Engagement Level: T3 (Write) — PR wrapper that invokes the reusable PR readiness gates.
+# Emits required checks used by org rulesets on staging/main.
+
+name: pr-readiness
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+      - ready_for_review
+      - review_requested
+  pull_request_review:
+    types:
+      - submitted
+      - edited
+      - dismissed
+
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  pr-readiness:
+    uses: ./.github/workflows/acw-pr-readiness-reusable.yml
+    with:
+      pull_number: ${{ github.event.pull_request.number }}
+      trigger_action: ${{ github.event.action }}
+      required_human_reviewer: jenperret
+      enforced_base_branches: staging,main
+      request_copilot_review: true
+      copilot_reviewer_candidates: copilot,github-copilot[bot]
+      escalation_label: needs-human-decision
+    secrets:
+      GH_APP_ID: ${{ secrets.AGENTCRAFTWORKS_APP_ID }}
+      GH_APP_PRIVATE_KEY: ${{ secrets.AGENTCRAFTWORKS_APP_PRIVATE_KEY }}

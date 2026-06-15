@@ -1,0 +1,591 @@
+# Engagement Level: T3 (Write) — Workflow with write access to pull requests and issues.
+# Orchestrates PR readiness gates: required approver, review feedback, GHAS, dependency review.
+# On gate failure, escalates with label + notification for human decision.
+# See: .github/copilot/instructions.md (engagement levels), AGENTS.md (Octokit conventions).
+
+name: acw-pr-readiness-reusable
+
+on:
+  workflow_call:
+    secrets:
+      GH_APP_ID:
+        required: true
+      GH_APP_PRIVATE_KEY:
+        required: true
+    inputs:
+      pull_number:
+        description: Pull request number from caller workflow.
+        required: true
+        type: number
+      trigger_action:
+        description: Original pull_request event action from caller workflow.
+        required: false
+        type: string
+        default: ""
+      required_human_reviewer:
+        description: GitHub login required to approve PRs to protected base branches.
+        required: false
+        type: string
+        default: jenperret
+      enforced_base_branches:
+        description: Comma-delimited base branches requiring required_human_reviewer approval.
+        required: false
+        type: string
+        default: staging,main
+      request_copilot_review:
+        description: Attempt to auto-request Copilot reviewer identities.
+        required: false
+        type: boolean
+        default: true
+      copilot_reviewer_candidates:
+        description: Comma-delimited reviewer identities to try for Copilot review.
+        required: false
+        type: string
+        default: copilot,github-copilot[bot]
+      escalation_label:
+        description: Label added when findings require human decision.
+        required: false
+        type: string
+        default: needs-human-decision
+permissions:
+  contents: read
+
+jobs:
+  request-reviewers:
+    name: Request Copilot + human reviewer
+    runs-on: ubuntu-latest
+    if: ${{ contains(fromJson('["opened","reopened","synchronize","ready_for_review","review_requested"]'), inputs.trigger_action) }}
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Request reviewers
+        uses: actions/github-script@v8
+        env:
+          GH_PR_NUMBER: ${{ inputs.pull_number }}
+          GH_TRIGGER_ACTION: ${{ inputs.trigger_action }}
+          GH_REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
+          GH_ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
+          GH_REQUEST_COPILOT_REVIEW: ${{ inputs.request_copilot_review }}
+          GH_COPILOT_REVIEWER_CANDIDATES: ${{ inputs.copilot_reviewer_candidates }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = Number(process.env.GH_PR_NUMBER || "0");
+            if (!pull_number) {
+              core.setFailed("Missing required input: pull_number");
+              return;
+            }
+
+            // Gate on allowed actions before making any API calls.
+            const allowedActions = new Set([
+              "opened",
+              "reopened",
+              "synchronize",
+              "ready_for_review",
+              "review_requested",
+            ]);
+            const action = (process.env.GH_TRIGGER_ACTION || "").trim() || context.payload.action || "";
+            if (!allowedActions.has(action)) {
+              core.notice(
+                `Skipping reviewer auto-request for action '${action}'. Allowed actions: ${[...allowedActions].join(", ")}.`
+              );
+              return;
+            }
+
+            const current = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+              owner,
+              repo,
+              pull_number,
+            });
+            const pr = current.data;
+
+            if (pr.draft) {
+              core.notice(`PR #${pr.number} is draft. Waiting for ready_for_review.`);
+              return;
+            }
+            const requested = new Set(
+              (current.data.requested_reviewers || []).map((r) => r.login.toLowerCase())
+            );
+
+            const candidates = [];
+            const human = (process.env.GH_REQUIRED_HUMAN_REVIEWER || "").trim();
+            const enforcedBranches = (process.env.GH_ENFORCED_BASE_BRANCHES || "")
+              .split(",")
+              .map((b) => b.trim())
+              .filter(Boolean);
+
+            // Only request human reviewer if base branch is enforced
+            if (human && enforcedBranches.includes(pr.base?.ref || "")) {
+              candidates.push(human);
+            }
+
+            const requestCopilot = String(process.env.GH_REQUEST_COPILOT_REVIEW || "true").toLowerCase() === "true";
+            if (requestCopilot) {
+              const copilotCandidates = (process.env.GH_COPILOT_REVIEWER_CANDIDATES || "")
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
+              candidates.push(...copilotCandidates);
+            }
+
+            for (const reviewer of candidates) {
+              const key = reviewer.toLowerCase();
+              if (requested.has(key)) {
+                core.info(`Reviewer already requested: ${reviewer}`);
+                continue;
+              }
+
+              try {
+                await github.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", {
+                  owner,
+                  repo,
+                  pull_number,
+                  reviewers: [reviewer],
+                });
+                core.info(`Requested reviewer: ${reviewer}`);
+                requested.add(key); // Mark as requested to avoid duplicates in this run
+              } catch (error) {
+                core.warning(`Could not request reviewer '${reviewer}': ${error.message}`);
+              }
+            }
+
+  required-human-approval:
+    name: Validate required human approver
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Check required approval for protected base branches
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = Number("${{ inputs.pull_number }}");
+            if (!pull_number) {
+              core.setFailed("Missing required input: pull_number");
+              return;
+            }
+
+            const prResponse = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+              owner,
+              repo,
+              pull_number,
+            });
+            const pr = prResponse.data;
+
+            const requiredReviewer = "${{ inputs.required_human_reviewer }}".trim().toLowerCase();
+            if (!requiredReviewer) {
+              core.notice("No required_human_reviewer configured. Skipping.");
+              return;
+            }
+
+            const enforcedBranches = "${{ inputs.enforced_base_branches }}"
+              .split(",")
+              .map((b) => b.trim())
+              .filter(Boolean);
+
+            const baseRef = pr.base?.ref || "";
+            if (!enforcedBranches.includes(baseRef)) {
+              core.notice(`Base branch '${baseRef}' is not enforced. Skipping human-approval gate.`);
+              return;
+            }
+
+            // Use route-based pagination (per AGENTS.md conventions)
+            const reviews = await github.paginate(
+              "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+              {
+                owner,
+                repo,
+                pull_number,
+                per_page: 100,
+              }
+            );
+
+            // Find latest review per user by submitted_at (stable, not implicit ordering)
+            const latestStateByUser = new Map();
+            for (const review of reviews) {
+              const user = (review.user?.login || "").toLowerCase();
+              if (!user) continue;
+              const current = latestStateByUser.get(user);
+              // Update if this is the first review for this user or newer than current
+              if (!current || new Date(review.submitted_at) > new Date(current.submitted_at)) {
+                latestStateByUser.set(user, review);
+              }
+            }
+
+            const reviewerData = latestStateByUser.get(requiredReviewer);
+            const state = reviewerData?.state || "none";
+            const approved = state === "APPROVED";
+
+            await core.summary
+              .addHeading("Required Human Approval")
+              .addRaw(`Base branch: ${baseRef}\n\n`)
+              .addRaw(`Required reviewer: ${requiredReviewer}\n\n`)
+              .addRaw(`Latest review state: ${state}\n\n`)
+              .write();
+
+            if (!approved) {
+              core.setFailed(
+                `PRs targeting '${baseRef}' require APPROVED review from '${requiredReviewer}'. Current state: ${state}.`
+              );
+            }
+
+  review-feedback-gate:
+    name: Validate unresolved review threads
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Fail when unresolved review threads exist
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const number = Number("${{ inputs.pull_number }}");
+            if (!number) {
+              core.setFailed("Missing required input: pull_number");
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            let unresolvedCount = 0;
+            let after = null;
+
+            do {
+              const result = await github.graphql(
+                `
+                query($owner: String!, $repo: String!, $number: Int!, $after: String) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      reviewThreads(first: 100, after: $after) {
+                        nodes {
+                          isResolved
+                          isOutdated
+                        }
+                        pageInfo {
+                          hasNextPage
+                          endCursor
+                        }
+                      }
+                    }
+                  }
+                }
+                `,
+                { owner, repo, number, after }
+              );
+
+              const threads = result.repository.pullRequest.reviewThreads.nodes || [];
+              unresolvedCount += threads.filter((t) => !t.isResolved && !t.isOutdated).length;
+              const pageInfo = result.repository.pullRequest.reviewThreads.pageInfo;
+              after = pageInfo.hasNextPage ? pageInfo.endCursor : null;
+            } while (after);
+
+            await core.summary
+              .addHeading("Review Feedback Gate")
+              .addRaw(`Unresolved (active) review threads: ${unresolvedCount}\n\n`)
+              .write();
+
+            if (unresolvedCount > 0) {
+              core.setFailed(
+                `Found ${unresolvedCount} unresolved active review thread(s). Address or resolve feedback before merge.`
+              );
+            }
+
+  ghas-gate:
+    name: Validate GHAS code scanning alerts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      security-events: read
+    # Run when invoked for PR context (direct pull_request runs or workflow_call from a PR-triggered caller)
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_call' }}
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Fail when open code scanning alerts exist for this PR
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const number = Number("${{ inputs.pull_number }}");
+            if (!number) {
+              core.setFailed("Missing required input: pull_number");
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prResponse = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+              owner,
+              repo,
+              pull_number: number,
+            });
+            const headSha = prResponse.data.head?.sha || "";
+            if (!headSha) {
+              core.setFailed(`Could not determine head commit SHA for PR #${number}.`);
+              return;
+            }
+
+            // Use server-side ref scoping to reduce API volume on large repos.
+            let prAlerts = [];
+            try {
+              prAlerts = await github.paginate(
+                "GET /repos/{owner}/{repo}/code-scanning/alerts",
+                {
+                  owner,
+                  repo,
+                  state: "open",
+                  ref: headSha,
+                  per_page: 100,
+                }
+              );
+            } catch (error) {
+              const status = Number(error?.status || error?.response?.status || 0);
+              if (status === 403 || status === 404) {
+                const reason =
+                  status === 403
+                    ? "Code scanning alerts are not accessible by the current GitHub App token."
+                    : "Code scanning is not available for this repository.";
+                core.warning(`${reason} Skipping GHAS gate.`);
+                await core.summary
+                  .addHeading("GHAS Gate (Code Scanning Alerts)")
+                  .addRaw(`Skipped: ${reason}\n\n`)
+                  .write();
+                return;
+              }
+              throw error;
+            }
+
+            await core.summary
+              .addHeading("GHAS Gate (Code Scanning Alerts)")
+              .addRaw(`Open code scanning alerts for PR #${number}: ${prAlerts.length}\n\n`)
+              .write();
+
+            if (prAlerts.length > 0) {
+              const details = prAlerts
+                .slice(0, 20)
+                .map((a) => {
+                  const rule = a.rule?.id || a.rule?.name || "unknown-rule";
+                  const severity = a.rule?.severity || a.rule?.security_severity_level || "unknown";
+                  const path = a.most_recent_instance?.location?.path || "unknown-path";
+                  return `- [${severity}] ${rule} @ ${path}`;
+                })
+                .join("\n");
+
+              core.setFailed(`Open GHAS code scanning alerts found (${prAlerts.length}).\n${details}`);
+            }
+
+  dependency-review-gate:
+    name: Validate dependency vulnerabilities
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    # Run when invoked for PR context (direct pull_request runs or workflow_call from a PR-triggered caller)
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_call' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+
+  escalate-human-decision:
+    name: Escalate unresolved findings for human decision
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    needs:
+      - required-human-approval
+      - review-feedback-gate
+      - ghas-gate
+      - dependency-review-gate
+    if: ${{ always() }}
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Label and notify when any gate is failing
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const issue_number = Number("${{ inputs.pull_number }}");
+            if (!issue_number) {
+              core.setFailed("Missing required input: pull_number");
+              return;
+            }
+
+            const failing = Object.entries(${{ toJson(needs) }})
+              .filter(([, value]) => value.result === "failure")
+              .map(([key]) => key);
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const label = "${{ inputs.escalation_label }}".trim();
+            const reviewer = "${{ inputs.required_human_reviewer }}".trim();
+            const prResponse = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+              owner,
+              repo,
+              pull_number: issue_number,
+            });
+            const pr = prResponse.data;
+
+            if (failing.length === 0) {
+              // Clean up escalation label when all gates pass
+              try {
+                await github.request("DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}", {
+                  owner,
+                  repo,
+                  issue_number,
+                  name: label,
+                });
+                core.info(`Removed escalation label '${label}' (all gates passing).`);
+              } catch (error) {
+                // Label might not exist; that's fine
+                if (error.status !== 404) {
+                  core.warning(`Could not remove label '${label}': ${error.message}`);
+                }
+              }
+              return;
+            }
+
+            // Some gates are failing; escalate
+            core.info(`Escalating due to failing gates: ${failing.join(", ")}`);
+
+            // Add escalation label
+            try {
+              await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/labels", {
+                owner,
+                repo,
+                issue_number,
+                labels: [label],
+              });
+            } catch (error) {
+              core.warning(`Could not add label '${label}': ${error.message}`);
+            }
+
+            // Only request reviewer for enforced base branches, and only if they haven't already APPROVED
+            if (
+              reviewer &&
+              "${{ inputs.enforced_base_branches }}"
+                .split(",")
+                .map((b) => b.trim())
+                .filter(Boolean)
+                .includes(pr.base?.ref || "")
+            ) {
+              try {
+                const reviews = await github.paginate(
+                  "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+                  { owner, repo, pull_number: issue_number, per_page: 100 }
+                );
+
+                const reviewerLower = reviewer.toLowerCase();
+                const reviewerReviews = reviews.filter(
+                  (r) => (r.user?.login || "").toLowerCase() === reviewerLower && r.submitted_at
+                );
+                const latestReview = reviewerReviews.reduce(
+                  (latest, r) => (!latest || new Date(r.submitted_at) > new Date(latest.submitted_at) ? r : latest),
+                  null
+                );
+                const latestState = latestReview?.state;
+                if (latestState === "APPROVED") {
+                  core.info(`Reviewer '${reviewer}' already approved. Skipping re-request.`);
+                } else {
+                  const current = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+                    owner,
+                    repo,
+                    pull_number: issue_number,
+                  });
+                  const alreadyRequested = (current.data.requested_reviewers || []).some(
+                    (r) => (r.login || "").toLowerCase() === reviewerLower
+                  );
+                  if (alreadyRequested) {
+                    core.info(`Reviewer '${reviewer}' is already requested. Skipping re-request.`);
+                  } else {
+                    await github.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", {
+                      owner,
+                      repo,
+                      pull_number: issue_number,
+                      reviewers: [reviewer],
+                    });
+                    core.info(`Requested reviewer: ${reviewer}`);
+                  }
+                }
+              } catch (error) {
+                core.warning(`Could not (re-)request reviewer '${reviewer}': ${error.message}`);
+              }
+            }
+
+            const alreadyEscalated = (pr.labels || []).some(
+              (l) => (l.name || "").toLowerCase() === label.toLowerCase()
+            );
+
+            if (alreadyEscalated) {
+              core.info(`Escalation label '${label}' already present. Skipping escalation comment.`);
+            } else {
+              // Post escalation comment with try/catch (may fail on fork PRs without issues:write)
+              const body = [
+                "Escalating for human decision due to unresolved quality/security findings.",
+                "",
+                `Failing gates: ${failing.join(", ")}`,
+                "",
+                `@${reviewer || "jenperret"} please review and decide on remediation path.`,
+              ].join("\n");
+
+              try {
+                await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
+                  owner,
+                  repo,
+                  issue_number,
+                  body,
+                });
+              } catch (error) {
+                core.warning(`Could not post escalation comment: ${error.message}`);
+              }
+            }
+              // (removed duplicate warning / extra brace)
