@@ -360,17 +360,34 @@ jobs:
             }
 
             // Use server-side ref scoping to reduce API volume on large repos.
-            const alerts = await github.paginate(
-              "GET /repos/{owner}/{repo}/code-scanning/alerts",
-              {
-                owner,
-                repo,
-                state: "open",
-                ref: headSha,
-                per_page: 100,
+            let prAlerts = [];
+            try {
+              prAlerts = await github.paginate(
+                "GET /repos/{owner}/{repo}/code-scanning/alerts",
+                {
+                  owner,
+                  repo,
+                  state: "open",
+                  ref: headSha,
+                  per_page: 100,
+                }
+              );
+            } catch (error) {
+              const status = Number(error?.status || error?.response?.status || 0);
+              if (status === 403 || status === 404) {
+                const reason =
+                  status === 403
+                    ? "Code scanning alerts are not accessible by the current GitHub App token."
+                    : "Code scanning is not available for this repository.";
+                core.warning(`${reason} Skipping GHAS gate.`);
+                await core.summary
+                  .addHeading("GHAS Gate (Code Scanning Alerts)")
+                  .addRaw(`Skipped: ${reason}\n\n`)
+                  .write();
+                return;
               }
-            );
-            const prAlerts = alerts;
+              throw error;
+            }
 
             await core.summary
               .addHeading("GHAS Gate (Code Scanning Alerts)")
