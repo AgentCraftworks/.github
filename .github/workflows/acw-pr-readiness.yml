@@ -1,5 +1,5 @@
-# T1: PR wrapper workflow that invokes the reusable PR readiness gates.
-# This emits required checks used by org rulesets on staging/main.
+# Engagement Level: T3 (Write) — PR wrapper that invokes the reusable PR readiness gates.
+# Emits required checks used by org rulesets on staging/main.
 
 name: pr-readiness
 
