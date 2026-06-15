@@ -1,4 +1,4 @@
-# T1: Workflow template for PR readiness gate orchestration.
+# Engagement Level: T3 (Write) — Workflow template for PR readiness gate orchestration.
 # Org-wide template for repos to enable automated PR quality/security gates.
 # Calls acw-pr-readiness-reusable.yml for implementation.
 # See: .github/copilot/instructions.md (engagement levels), AGENTS.md (workflow conventions).
