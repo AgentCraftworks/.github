@@ -78,7 +78,7 @@ jobs:
   quality-summary:
     name: Branch quality summary
     runs-on: ubuntu-latest
-    needs: [yaml-lint, detect-secrets]
+    needs: [yaml-lint, detect-secrets, dependency-audit]
     if: always()
     permissions:
       contents: read
