@@ -350,11 +350,12 @@ jobs:
 
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const commits = await github.paginate(
-              "GET /repos/{owner}/{repo}/pulls/{pull_number}/commits",
-              { owner, repo, pull_number: number, per_page: 100 }
-            );
-            const headSha = commits.length > 0 ? commits[commits.length - 1].sha : "";
+            const prResponse = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+              owner,
+              repo,
+              pull_number: number,
+            });
+            const headSha = prResponse.data.head?.sha || "";
             if (!headSha) {
               core.setFailed(`Could not determine head commit SHA for PR #${number}.`);
               return;
