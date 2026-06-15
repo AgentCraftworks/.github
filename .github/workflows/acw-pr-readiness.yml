@@ -1,9 +1,7 @@
-# Engagement Level: T3 (Write) — Workflow template for PR readiness gate orchestration.
-# Org-wide template for repos to enable automated PR quality/security gates.
-# Calls acw-pr-readiness-reusable.yml for implementation.
-# See: .github/copilot/instructions.md (engagement levels), AGENTS.md (workflow conventions).
+# Engagement Level: T3 (Write) — PR wrapper that invokes the reusable PR readiness gates.
+# Emits required checks used by org rulesets on staging/main.
 
-name: ACW PR Readiness
+name: pr-readiness
 
 on:
   pull_request:
@@ -22,7 +20,8 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
+  issues: write
 jobs:
   pr-readiness:
     uses: AgentCraftworks/.github/.github/workflows/acw-pr-readiness-reusable.yml@main
