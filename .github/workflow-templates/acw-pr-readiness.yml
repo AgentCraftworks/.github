@@ -11,5 +11,10 @@ permissions:
 
 jobs:
   readiness:
-    uses: AgentCraftworks/.github/.github/workflows/acw-pr-readiness.yml@c73707373b824d682aa5f538f82e722cd58437c9
-    secrets: inherit
+    uses: AgentCraftworks/.github/.github/workflows/acw-pr-readiness-reusable.yml@c73707373b824d682aa5f538f82e722cd58437c9
+    with:
+      pull_number: ${{ github.event.pull_request.number }}
+      trigger_action: ${{ github.event.action }}
+    secrets:
+      GH_APP_ID: ${{ secrets.GH_APP_ID }}
+      GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
