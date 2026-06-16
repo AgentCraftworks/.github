@@ -1,0 +1,15 @@
+name: ACW PR Readiness
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  readiness:
+    uses: AgentCraftworks/.github/.github/workflows/acw-pr-readiness.yml@c73707373b824d682aa5f538f82e722cd58437c9
+    secrets: inherit
