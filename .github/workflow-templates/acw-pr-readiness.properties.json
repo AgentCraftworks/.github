@@ -1,0 +1,13 @@
+{
+  "name": "ACW PR Readiness",
+  "description": "Enterprise PR readiness gates for Copilot review request, required human approver on staging/main, GHAS, dependency review, and escalation.",
+  "iconName": "shield",
+  "categories": [
+    "Security",
+    "Code Quality",
+    "Automation"
+  ],
+  "filePatterns": [
+    "**"
+  ]
+}
