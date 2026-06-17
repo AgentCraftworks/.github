@@ -22,14 +22,9 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
-  security-events: read
-
-concurrency:
-  group: acw-pr-readiness-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
 jobs:
   pr-readiness:
-    uses: ./.github/workflows/acw-pr-readiness-reusable.yml
+    uses: AgentCraftworks/.github/.github/workflows/acw-pr-readiness-reusable.yml@main
     with:
       pull_number: ${{ github.event.pull_request.number }}
       trigger_action: ${{ github.event.action }}
