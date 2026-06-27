@@ -49,8 +49,8 @@ on:
         default: needs-human-decision
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
+  pull-requests: read
+  issues: read
   security-events: read
 
 jobs:
@@ -60,7 +60,7 @@ jobs:
     if: ${{ contains(fromJson('["opened","reopened","synchronize","ready_for_review","review_requested"]'), inputs.trigger_action) }}
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: read
     steps:
       - name: Generate app token
         id: app-token
@@ -184,7 +184,7 @@ jobs:
             }
 
   required-human-approval:
-    name: Validate required human approver
+    name: required-human-approval
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -346,7 +346,7 @@ jobs:
             }
 
   ghas-gate:
-    name: Validate GHAS code scanning alerts
+    name: ghas-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -436,7 +436,7 @@ jobs:
             }
 
   dependency-review-gate:
-    name: Validate dependency vulnerabilities
+    name: dependency-review-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -444,21 +444,64 @@ jobs:
     # Run when invoked for PR context (direct pull_request runs or workflow_call from a PR-triggered caller)
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_call' }}
     steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Resolve PR base/head refs
+        id: pr-refs
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = context.payload.pull_request?.number ?? Number("${{ inputs.pull_number }}");
+            if (!pull_number) {
+              core.setFailed(
+                "Missing pull request number (inputs.pull_number for workflow_call or context.payload.pull_request.number for pull_request)."
+              );
+              return;
+            }
+
+            const prResponse = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+              owner,
+              repo,
+              pull_number,
+            });
+            const pr = prResponse.data;
+            const baseRef = pr.base?.sha || pr.base?.ref;
+            const headRef = pr.head?.sha;
+
+            if (!baseRef || !headRef) {
+              core.setFailed(`Could not determine base/head refs for PR #${pull_number}.`);
+              return;
+            }
+
+            core.setOutput("base_ref", baseRef);
+            core.setOutput("head_ref", headRef);
+
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Dependency review
         uses: actions/dependency-review-action@v4
         with:
+          base-ref: ${{ steps.pr-refs.outputs.base_ref }}
+          head-ref: ${{ steps.pr-refs.outputs.head_ref }}
           fail-on-severity: moderate
+          comment-summary-in-pr: never
 
   escalate-human-decision:
     name: Escalate unresolved findings for human decision
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
-      issues: write
+      pull-requests: read
+      issues: read
     needs:
       - required-human-approval
       - review-feedback-gate
@@ -616,4 +659,3 @@ jobs:
                 core.warning(`Could not post escalation comment: ${error.message}`);
               }
             }
-              // (removed duplicate warning / extra brace)
