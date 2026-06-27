@@ -51,6 +51,7 @@ $NEW_SHA = 'REPLACE_WITH_FINAL_RELEASE_SHA_40_HEX'
 rg "$NEW_SHA|c73707373b824d682aa5f538f82e722cd58437c9|REPLACE_WITH_FINAL_RELEASE_SHA_40_HEX" `
   docs/standards/reusable-workflow-releases.md .github/workflow-templates/acw-pr-readiness.yml
 
-# 5) Verify tag points at the same SHA (run after creating/updating v1.0.1 tag)
-gh api repos/AgentCraftworks/.github/git/ref/tags/v1.0.1 --jq '.object.sha'
+# 5) Verify tag ultimately resolves to the same commit SHA (handles annotated tags)
+$ref = gh api repos/AgentCraftworks/.github/git/ref/tags/v1.0.1 | ConvertFrom-Json
+if ($ref.object.type -eq 'tag') { gh api repos/AgentCraftworks/.github/git/tags/$($ref.object.sha) --jq '.object.sha' } else { $ref.object.sha }
 ```
