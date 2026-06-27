@@ -1,0 +1,48 @@
+{
+  "policy_id": "acw-pr-readiness-governance",
+  "policy_version": "1.0.0",
+  "immutable_pin_policy": {
+    "enforced_paths": [
+      ".github/workflow-templates/acw-pr-readiness.yml"
+    ],
+    "allowed_reusable_workflow_ref_pattern": "^AgentCraftworks/\\.github/\\.github/workflows/acw-pr-readiness-reusable\\.yml@[0-9a-f]{40}$",
+    "allow_mutable_refs_in_canary_non_required_paths": true
+  },
+  "ruleset_alignment": {
+    "protected_branches": [
+      "staging",
+      "main"
+    ],
+    "required_gate_job_ids": [
+      "required-human-approval",
+      "review-feedback-gate",
+      "ghas-gate",
+      "dependency-review-gate",
+      "escalate-human-decision"
+    ],
+    "wrapper_workflow_name": "pr-readiness",
+    "wrapper_job_id": "pr-readiness"
+  },
+  "escalation": {
+    "label": "needs-human-decision",
+    "required_human_reviewer": "jenperret",
+    "comment_marker": "<!-- acw-escalation:v1 -->",
+    "default_mention": "@jenperret",
+    "failing_gate_remediation": {
+      "required-human-approval": "Ensure configured required human reviewer has an active APPROVED review.",
+      "review-feedback-gate": "Resolve all active review threads or mark outdated with rationale.",
+      "ghas-gate": "Remediate open code scanning findings for the PR head SHA.",
+      "dependency-review-gate": "Update or replace vulnerable dependencies to satisfy policy severity threshold."
+    }
+  },
+  "app_contract": {
+    "input_schema_version": "v1",
+    "output_schema_version": "v1",
+    "result_statuses": [
+      "pass",
+      "fail",
+      "error",
+      "skipped"
+    ]
+  }
+}

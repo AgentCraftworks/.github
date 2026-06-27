@@ -1,7 +1,7 @@
 # Engagement Level: T3 (Write) — PR wrapper that invokes the reusable PR readiness gates.
 # Emits required checks used by org rulesets on staging/main.
 
-name: pr-readiness
+name: ACW-pr-readiness
 
 on:
   pull_request:
@@ -9,6 +9,7 @@ on:
       - opened
       - reopened
       - synchronize
+      - converted_to_draft
       - edited
       - ready_for_review
       - review_requested
@@ -20,13 +21,15 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
+  pull-requests: read
+  issues: read
+  security-events: read
 concurrency:
   group: acw-pr-readiness-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
   pr-readiness:
+    name: ACW-pr-readiness
     uses: ./.github/workflows/acw-pr-readiness-reusable.yml
     with:
       pull_number: ${{ github.event.pull_request.number }}
