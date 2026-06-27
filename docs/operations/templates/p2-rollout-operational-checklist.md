@@ -3,7 +3,8 @@
 > **DRI** (Directly Responsible Individual): the single named person accountable for completing this checklist and signing off on the phase decision.
 
 > Copy this template per phase decision (Preflight, Canary, Pilot, General).
-
+>
+> Terminology: **DRI** = Directly Responsible Individual.
 ## Rollout Context
 
 - Rollout ID:
