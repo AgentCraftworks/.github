@@ -47,3 +47,10 @@ Canary testing may use mutable refs only in explicitly non-required paths:
 - Policy constants and escalation conventions are source-controlled in:
   - `docs/standards/pr-readiness-policy-spec.json`
   - `docs/standards/governance-enforcement-contract.md`
+
+## Draft-First PR Readiness Protocol
+
+- PR intake should be Draft-first so non-human gates run before reviewer handoff.
+- `acw-rubber-duck-review` executes in Draft state and is suppressed after first posted review marker.
+- `ACW-pr-readiness` enforces technical/security gates during Draft and defers human-approval enforcement until `ready_for_review`.
+- Repositories should transition to Ready only after Draft checks are green (Analyze, CodeQL, GHAS gate, dependency-review gate, unresolved-thread gate).

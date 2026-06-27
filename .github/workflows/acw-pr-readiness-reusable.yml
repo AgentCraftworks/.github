@@ -60,7 +60,7 @@ jobs:
     if: ${{ contains(fromJson('["opened","reopened","synchronize","ready_for_review","review_requested"]'), inputs.trigger_action) }}
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: read
     steps:
       - name: Generate app token
         id: app-token
@@ -184,7 +184,7 @@ jobs:
             }
 
   required-human-approval:
-    name: Validate required human approver
+    name: required-human-approval
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -216,6 +216,15 @@ jobs:
               pull_number,
             });
             const pr = prResponse.data;
+
+            if (pr.draft) {
+              await core.summary
+                .addHeading("Required Human Approval")
+                .addRaw(`PR #${pr.number} is draft. Human-approval gate is deferred until ready_for_review.\n\n`)
+                .write();
+              core.notice(`PR #${pr.number} is draft. Skipping required-human-approval gate until ready_for_review.`);
+              return;
+            }
 
             const requiredReviewer = "${{ inputs.required_human_reviewer }}".trim().toLowerCase();
             if (!requiredReviewer) {
@@ -346,7 +355,7 @@ jobs:
             }
 
   ghas-gate:
-    name: Validate GHAS code scanning alerts
+    name: ghas-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -436,7 +445,7 @@ jobs:
             }
 
   dependency-review-gate:
-    name: Validate dependency vulnerabilities
+    name: dependency-review-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -500,8 +509,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
-      issues: write
+      pull-requests: read
+      issues: read
     needs:
       - required-human-approval
       - review-feedback-gate
