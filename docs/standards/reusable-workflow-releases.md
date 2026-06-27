@@ -37,7 +37,7 @@ diff --git a/.github/workflow-templates/acw-pr-readiness.yml b/.github/workflow-
 # 1) Set final release SHA once known (must be 40 hex chars)
 $NEW_SHA = 'd325d9e46b0d6d320c9c2ed9a43f6081f2429189'
 
-# 2) Update release manifest placeholder
+# 2) Update (or confirm) the release manifest entry for v1.0.1
 (Get-Content docs/standards/reusable-workflow-releases.md -Raw).
   Replace('d325d9e46b0d6d320c9c2ed9a43f6081f2429189', $NEW_SHA) |
   Set-Content docs/standards/reusable-workflow-releases.md -NoNewline
