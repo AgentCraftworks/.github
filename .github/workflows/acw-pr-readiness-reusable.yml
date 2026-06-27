@@ -217,6 +217,15 @@ jobs:
             });
             const pr = prResponse.data;
 
+            if (pr.draft) {
+              await core.summary
+                .addHeading("Required Human Approval")
+                .addRaw(`PR #${pr.number} is draft. Human-approval gate is deferred until ready_for_review.\n\n`)
+                .write();
+              core.notice(`PR #${pr.number} is draft. Skipping required-human-approval gate until ready_for_review.`);
+              return;
+            }
+
             const requiredReviewer = "${{ inputs.required_human_reviewer }}".trim().toLowerCase();
             if (!requiredReviewer) {
               core.notice("No required_human_reviewer configured. Skipping.");

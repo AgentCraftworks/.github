@@ -6,7 +6,7 @@ name: ACW-pr-readiness
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, edited, ready_for_review, review_requested]
+    types: [opened, reopened, synchronize, converted_to_draft, edited, ready_for_review, review_requested]
   pull_request_review:
     types: [submitted, edited, dismissed]
 

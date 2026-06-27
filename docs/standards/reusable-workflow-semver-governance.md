@@ -44,3 +44,10 @@ Canary testing may use mutable refs only in explicitly non-required paths:
 - Required workflow templates in this repository must always pin immutable SHAs.
 - Release manifest entries must exist before rollout PRs merge.
 - Any move to a new release SHA requires a reviewed PR.
+
+## Draft-First PR Readiness Protocol
+
+- PR intake should be Draft-first so non-human gates run before reviewer handoff.
+- `acw-rubber-duck-review` executes in Draft state and is suppressed after first posted review marker.
+- `ACW-pr-readiness` enforces technical/security gates during Draft and defers human-approval enforcement until `ready_for_review`.
+- Repositories should transition to Ready only after Draft checks are green (Analyze, CodeQL, GHAS gate, dependency-review gate, unresolved-thread gate).
