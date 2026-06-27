@@ -53,8 +53,8 @@ Required invariants:
 For each releasable reusable workflow, payload plane must publish:
 
 - `workflow_id`
-- `semver`
-- `commit_sha`
+- `version` (SemVer)
+- `sha` (immutable commit SHA)
 - `published_at`
 - `contract_version` (optional until first incompatible contract change)
 - `migration_notes` (required for major version)
