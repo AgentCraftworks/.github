@@ -27,7 +27,7 @@ We formalize a strict boundary:
 | --- | --- | --- |
 | Policy decisions | Evaluates pass/fail/escalate using policy rules and environment caps | Declares reusable workflow behavior and required inputs/outputs |
 | Runtime actions | Posts status/check summaries, labels, escalation issues/comments, onboarding PRs | Executes reusable workflows/templates in consumer repos |
-| Release consumption | Resolves approved payload release (`workflow`, `version`, `sha`) | Publishes release manifest and SemVer governance |
+| Release consumption | Resolves approved payload release (`workflow_id`, `version`, `sha`) | Publishes release manifest and SemVer governance |
 | Auditability | Stores decision rationale and correlation IDs | Stores immutable workflow source and release manifest |
 | Backward compatibility | Enforces contract compatibility and rollout gates | Maintains versioned contracts; breaking changes require major bump |
 
