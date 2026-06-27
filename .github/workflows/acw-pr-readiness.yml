@@ -22,6 +22,7 @@ permissions:
   contents: read
   pull-requests: read
   issues: read
+  security-events: read
 concurrency:
   group: acw-pr-readiness-${{ github.event.pull_request.number }}
   cancel-in-progress: true

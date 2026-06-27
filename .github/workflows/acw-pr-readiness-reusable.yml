@@ -60,7 +60,7 @@ jobs:
     if: ${{ contains(fromJson('["opened","reopened","synchronize","ready_for_review","review_requested"]'), inputs.trigger_action) }}
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: read
     steps:
       - name: Generate app token
         id: app-token
@@ -500,8 +500,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
-      issues: write
+      pull-requests: read
+      issues: read
     needs:
       - required-human-approval
       - review-feedback-gate
