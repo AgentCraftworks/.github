@@ -8,6 +8,7 @@
 
 This playbook defines how AgentCraftworks rolls out workflow-pack and GitHub App changes safely using canary and staged cohorts. It is written for the current state where workflow telemetry in `AgentCraftworks/.github` is authoritative, while app control-plane rollout controls in `AgentCraftworks/AgentCraftworks` are partially available and treated as conditional.
 
+Terminology: **DRI** = Directly Responsible Individual.
 This playbook covers:
 
 - Cohort selection
