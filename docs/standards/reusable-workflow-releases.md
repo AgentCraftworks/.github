@@ -5,14 +5,14 @@ This manifest tracks immutable release mappings for reusable workflows.
 | Workflow | Version | Commit SHA | Published |
 | --- | --- | --- | --- |
 | `acw-pr-readiness-reusable` | `v1.0.0` | `c73707373b824d682aa5f538f82e722cd58437c9` | 2026-06-16 |
-| `acw-pr-readiness-reusable` | `v1.0.1` | `REPLACE_WITH_FINAL_RELEASE_SHA_40_HEX` | TBD |
+| `acw-pr-readiness-reusable` | `v1.0.1` | `d325d9e46b0d6d320c9c2ed9a43f6081f2429189` | 2026-06-26 |
 
 ## Release Candidate Finalization Checklist (`acw-pr-readiness-reusable v1.0.1`)
 
 SemVer classification: **PATCH** (stabilization/reliability updates, no contract-breaking input/output or permission model changes).
 
 1. Capture final immutable release commit SHA after Lane A merges.
-2. Replace `REPLACE_WITH_FINAL_RELEASE_SHA_40_HEX` in this manifest row with the 40-character commit SHA.
+2. Record the final immutable 40-character release commit SHA in this manifest row.
 3. Create/move tag `v1.0.1` to that exact release commit SHA.
 4. Update all in-repo consumer SHA pins to the same commit SHA:
    - `.github/workflow-templates/acw-pr-readiness.yml` (`jobs.pr-readiness.uses`)
@@ -28,18 +28,18 @@ SemVer classification: **PATCH** (stabilization/reliability updates, no contract
 diff --git a/.github/workflow-templates/acw-pr-readiness.yml b/.github/workflow-templates/acw-pr-readiness.yml
 @@
 -    uses: AgentCraftworks/.github/.github/workflows/acw-pr-readiness-reusable.yml@c73707373b824d682aa5f538f82e722cd58437c9
-+    uses: AgentCraftworks/.github/.github/workflows/acw-pr-readiness-reusable.yml@REPLACE_WITH_FINAL_RELEASE_SHA_40_HEX
++    uses: AgentCraftworks/.github/.github/workflows/acw-pr-readiness-reusable.yml@d325d9e46b0d6d320c9c2ed9a43f6081f2429189
 ```
 
 ## Command Checklist (Final SHA Substitution + Validation)
 
 ```powershell
 # 1) Set final release SHA once known (must be 40 hex chars)
-$NEW_SHA = 'REPLACE_WITH_FINAL_RELEASE_SHA_40_HEX'
+$NEW_SHA = 'd325d9e46b0d6d320c9c2ed9a43f6081f2429189'
 
 # 2) Update release manifest placeholder
 (Get-Content docs/standards/reusable-workflow-releases.md -Raw).
-  Replace('REPLACE_WITH_FINAL_RELEASE_SHA_40_HEX', $NEW_SHA) |
+  Replace('d325d9e46b0d6d320c9c2ed9a43f6081f2429189', $NEW_SHA) |
   Set-Content docs/standards/reusable-workflow-releases.md -NoNewline
 
 # 3) Update template consumer pin
@@ -48,7 +48,7 @@ $NEW_SHA = 'REPLACE_WITH_FINAL_RELEASE_SHA_40_HEX'
   Set-Content .github/workflow-templates/acw-pr-readiness.yml -NoNewline
 
 # 4) Confirm all in-repo pin sites are updated
-rg "$NEW_SHA|c73707373b824d682aa5f538f82e722cd58437c9|REPLACE_WITH_FINAL_RELEASE_SHA_40_HEX" `
+rg "$NEW_SHA|c73707373b824d682aa5f538f82e722cd58437c9" `
   docs/standards/reusable-workflow-releases.md .github/workflow-templates/acw-pr-readiness.yml
 
 # 5) Verify tag ultimately resolves to the same commit SHA (handles annotated tags)
