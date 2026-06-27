@@ -44,3 +44,8 @@ Canary testing may use mutable refs only in explicitly non-required paths:
 - Required workflow templates in this repository must always pin immutable SHAs.
 - Release manifest entries must exist before rollout PRs merge.
 - Any move to a new release SHA requires a reviewed PR.
+
+## Operational references
+
+- `docs/operations/workflow-pack-operating-model.md`
+- `docs/operations/workflow-pack-incident-runbook.md`
