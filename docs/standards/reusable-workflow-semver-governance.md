@@ -54,3 +54,8 @@ Canary testing may use mutable refs only in explicitly non-required paths:
 - `acw-rubber-duck-review` executes in Draft state and is suppressed after first posted review marker.
 - `ACW-pr-readiness` enforces technical/security gates during Draft and defers human-approval enforcement until `ready_for_review`.
 - Repositories should transition to Ready only after Draft checks are green (Analyze, CodeQL, GHAS gate, dependency-review gate, unresolved-thread gate).
+
+## Operational references
+
+- `docs/operations/workflow-pack-operating-model.md`
+- `docs/operations/workflow-pack-incident-runbook.md`
