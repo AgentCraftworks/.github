@@ -36,10 +36,11 @@ diff --git a/.github/workflow-templates/acw-pr-readiness.yml b/.github/workflow-
 ```powershell
 # 1) Set final release SHA once known (must be 40 hex chars)
 $NEW_SHA = 'd325d9e46b0d6d320c9c2ed9a43f6081f2429189'
+$OLD_SHA = 'd325d9e46b0d6d320c9c2ed9a43f6081f2429189'
 
 # 2) Update (or confirm) the release manifest entry for v1.0.1
 (Get-Content docs/standards/reusable-workflow-releases.md -Raw).
-  Replace('d325d9e46b0d6d320c9c2ed9a43f6081f2429189', $NEW_SHA) |
+  Replace($OLD_SHA, $NEW_SHA) |
   Set-Content docs/standards/reusable-workflow-releases.md -NoNewline
 
 # 3) Update template consumer pin
@@ -48,7 +49,7 @@ $NEW_SHA = 'd325d9e46b0d6d320c9c2ed9a43f6081f2429189'
   Set-Content .github/workflow-templates/acw-pr-readiness.yml -NoNewline
 
 # 4) Confirm all in-repo pin sites are updated
-rg "$NEW_SHA|c73707373b824d682aa5f538f82e722cd58437c9" `
+rg "$NEW_SHA|$OLD_SHA|c73707373b824d682aa5f538f82e722cd58437c9" `
   docs/standards/reusable-workflow-releases.md .github/workflow-templates/acw-pr-readiness.yml
 
 # 5) Verify tag ultimately resolves to the same commit SHA (handles annotated tags)

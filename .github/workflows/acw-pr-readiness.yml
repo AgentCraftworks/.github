@@ -20,8 +20,8 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
+  pull-requests: read
+  issues: read
 concurrency:
   group: acw-pr-readiness-${{ github.event.pull_request.number }}
   cancel-in-progress: true
