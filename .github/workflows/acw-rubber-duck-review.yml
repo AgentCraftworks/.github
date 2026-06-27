@@ -1,5 +1,5 @@
 # Engagement Level: T2 (Comment) — Posts AI rubber-duck review comments on Draft PRs.
-# Runs once per PR (suppressed on re-push after first review).
+# Enforces draft-first intake and runs once per PR (suppressed on re-push after first review).
 # Uses GitHub Models inference API so model is configurable and token usage is visible.
 # See: AGENTS.md, .github/copilot/instructions.md.
 
@@ -7,13 +7,51 @@ name: acw-rubber-duck-review
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review, synchronize]
+    types: [opened, reopened, synchronize, converted_to_draft]
 
 permissions:
   contents: read
   pull-requests: write
 
 jobs:
+  enforce-draft-first:
+    if: ${{ github.event.action == 'opened' && github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.AGENTCRAFTWORKS_APP_ID }}
+          private-key: ${{ secrets.AGENTCRAFTWORKS_APP_PRIVATE_KEY }}
+
+      - name: Convert newly-opened PR to draft
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr?.node_id) {
+              core.setFailed("Missing pull_request.node_id in event payload.");
+              return;
+            }
+            await github.graphql(
+              `
+              mutation($pullRequestId: ID!) {
+                convertPullRequestToDraft(input: { pullRequestId: $pullRequestId }) {
+                  pullRequest {
+                    number
+                    isDraft
+                  }
+                }
+              }
+              `,
+              { pullRequestId: pr.node_id }
+            );
+            core.notice(`Converted PR #${pr.number} to draft for pre-human get-to-green checks.`);
+
   rubber-duck-review:
     name: Rubber duck review (pre-human)
     runs-on: ubuntu-latest
@@ -54,7 +92,7 @@ jobs:
 
       - name: Checkout
         if: ${{ steps.check-prior.outputs.skip == 'false' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Collect changed files and diff
         id: diff
