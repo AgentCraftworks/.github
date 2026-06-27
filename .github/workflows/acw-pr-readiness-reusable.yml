@@ -217,6 +217,15 @@ jobs:
             });
             const pr = prResponse.data;
 
+            if (pr.draft) {
+              await core.summary
+                .addHeading("Required Human Approval")
+                .addRaw(`PR #${pr.number} is draft. Human-approval gate is deferred until ready_for_review.\n\n`)
+                .write();
+              core.notice(`PR #${pr.number} is draft. Skipping required-human-approval gate until ready_for_review.`);
+              return;
+            }
+
             const requiredReviewer = "${{ inputs.required_human_reviewer }}".trim().toLowerCase();
             if (!requiredReviewer) {
               core.notice("No required_human_reviewer configured. Skipping.");
@@ -544,18 +553,20 @@ jobs:
 
             if (failing.length === 0) {
               // Clean up escalation label when all gates pass
-              try {
-                await github.request("DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}", {
-                  owner,
-                  repo,
-                  issue_number,
-                  name: label,
-                });
-                core.info(`Removed escalation label '${label}' (all gates passing).`);
-              } catch (error) {
-                // Label might not exist; that's fine
-                if (error.status !== 404) {
-                  core.warning(`Could not remove label '${label}': ${error.message}`);
+              if (label) {
+                try {
+                  await github.request("DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}", {
+                    owner,
+                    repo,
+                    issue_number,
+                    name: label,
+                  });
+                  core.info(`Removed escalation label '${label}' (all gates passing).`);
+                } catch (error) {
+                  // Label might not exist; that's fine
+                  if (error.status !== 404) {
+                    core.warning(`Could not remove label '${label}': ${error.message}`);
+                  }
                 }
               }
               return;
@@ -569,15 +580,19 @@ jobs:
             // Some gates are failing; escalate
             core.info(`Escalating due to failing gates: ${failing.join(", ")}`);
             // Add escalation label
-            try {
-              await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/labels", {
-                owner,
-                repo,
-                issue_number,
-                labels: [label],
-              });
-            } catch (error) {
-              core.warning(`Could not add label '${label}': ${error.message}`);
+            if (label) {
+              try {
+                await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/labels", {
+                  owner,
+                  repo,
+                  issue_number,
+                  labels: [label],
+                });
+              } catch (error) {
+                core.warning(`Could not add label '${label}': ${error.message}`);
+              }
+            } else {
+              core.warning("escalation_label input is empty; skipping label operation.");
             }
 
             // Only request reviewer for enforced base branches, and only if they haven't already APPROVED
@@ -632,18 +647,44 @@ jobs:
               }
             }
 
-            const alreadyEscalated = (pr.labels || []).some(
-              (l) => (l.name || "").toLowerCase() === label.toLowerCase()
+            const escalationMarker = "<!-- acw-escalation:v1 -->";
+            const existingEscalationComments = await github.paginate(
+              "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
+              { owner, repo, issue_number, per_page: 100 }
+            );
+            const alreadyEscalatedByMarker = existingEscalationComments.some((c) =>
+              (c.body || "").includes(escalationMarker)
             );
 
-            if (alreadyEscalated) {
-              core.info(`Escalation label '${label}' already present. Skipping escalation comment.`);
+            if (alreadyEscalatedByMarker) {
+              core.info(`Escalation marker already present. Skipping escalation comment.`);
             } else {
+              const remediationByGate = {
+                "required-human-approval":
+                  "- **required-human-approval**: Ensure the configured required human reviewer has an active APPROVED review on this PR.",
+                "review-feedback-gate":
+                  "- **review-feedback-gate**: Resolve all active review threads or mark outdated threads as resolved with rationale.",
+                "ghas-gate":
+                  "- **ghas-gate**: Remediate open code scanning findings on the PR head SHA, then rerun checks.",
+                "dependency-review-gate":
+                  "- **dependency-review-gate**: Update or replace flagged dependencies to remove moderate+ vulnerabilities."
+              };
+              const remediationLines = failing.map(
+                (gate) =>
+                  remediationByGate[gate] ||
+                  `- **${gate}**: Inspect the failing check output and apply the documented remediation for that control.`
+              );
+
               // Post escalation comment with try/catch (may fail on fork PRs without issues:write)
               const body = [
+                escalationMarker,
                 "Escalating for human decision due to unresolved quality/security findings.",
                 "",
-                `Failing gates: ${failing.join(", ")}`,
+                "**Failing gates**",
+                ...failing.map((gate) => `- \`${gate}\``),
+                "",
+                "**Required remediation**",
+                ...remediationLines,
                 "",
                 `@${reviewer || "jenperret"} please review and decide on remediation path.`,
               ].join("\n");

@@ -9,6 +9,7 @@ on:
       - opened
       - reopened
       - synchronize
+      - converted_to_draft
       - edited
       - ready_for_review
       - review_requested

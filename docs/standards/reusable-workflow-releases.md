@@ -36,11 +36,10 @@ diff --git a/.github/workflow-templates/acw-pr-readiness.yml b/.github/workflow-
 ```powershell
 # 1) Set final release SHA once known (must be 40 hex chars)
 $NEW_SHA = 'd325d9e46b0d6d320c9c2ed9a43f6081f2429189'
-$OLD_SHA = 'd325d9e46b0d6d320c9c2ed9a43f6081f2429189'
 
-# 2) Update (or confirm) the release manifest entry for v1.0.1
+# 2) Update release manifest placeholder
 (Get-Content docs/standards/reusable-workflow-releases.md -Raw).
-  Replace($OLD_SHA, $NEW_SHA) |
+  Replace('d325d9e46b0d6d320c9c2ed9a43f6081f2429189', $NEW_SHA) |
   Set-Content docs/standards/reusable-workflow-releases.md -NoNewline
 
 # 3) Update template consumer pin
@@ -49,10 +48,15 @@ $OLD_SHA = 'd325d9e46b0d6d320c9c2ed9a43f6081f2429189'
   Set-Content .github/workflow-templates/acw-pr-readiness.yml -NoNewline
 
 # 4) Confirm all in-repo pin sites are updated
-rg "$NEW_SHA|$OLD_SHA|c73707373b824d682aa5f538f82e722cd58437c9" `
+rg "$NEW_SHA|c73707373b824d682aa5f538f82e722cd58437c9" `
   docs/standards/reusable-workflow-releases.md .github/workflow-templates/acw-pr-readiness.yml
 
 # 5) Verify tag ultimately resolves to the same commit SHA (handles annotated tags)
 $ref = gh api repos/AgentCraftworks/.github/git/ref/tags/v1.0.1 | ConvertFrom-Json
 if ($ref.object.type -eq 'tag') { gh api repos/AgentCraftworks/.github/git/tags/$($ref.object.sha) --jq '.object.sha' } else { $ref.object.sha }
 ```
+
+## Operational references
+
+- `docs/operations/workflow-pack-operating-model.md`
+- `docs/operations/workflow-pack-incident-runbook.md`
