@@ -1,5 +1,9 @@
 # P2 Lane F Rollout Playbook (Canary + Staged)
 
+> **DRI** (Directly Responsible Individual): the single named person accountable for a phase decision, metric review, or rollout action. Each table row and reporting cadence entry identifies the DRI.
+
+> **Traceability note:** This document is a Lane F deliverable tracked under Issue #20 ("P2 Lane G: Establish operating model for release cadence, ownership, and incident response"). Lane F (Rollout) and Lane G (Operating Model) are sibling work streams under P2; this playbook satisfies the Lane F rollout artifact scope within that issue.
+
 ## Purpose and Scope
 
 This playbook defines how AgentCraftworks rolls out workflow-pack and GitHub App changes safely using canary and staged cohorts. It is written for the current state where workflow telemetry in `AgentCraftworks/.github` is authoritative, while app control-plane rollout controls in `AgentCraftworks/AgentCraftworks` are partially available and treated as conditional.
@@ -37,20 +41,20 @@ Use with:
 
 ## Cohort Selection Model
 
-## Cohort Types
+### Cohort Types
 
 1. **Canary cohort**: smallest blast radius repositories, low external dependency risk, high maintainer responsiveness.
 2. **Pilot cohort**: broader mix of repositories with representative workload diversity.
 3. **General cohort**: remaining repositories after pilot criteria pass.
 
-## Repository Eligibility Criteria
+### Repository Eligibility Criteria
 
 - Has required branch protection and required checks configured for `staging` and `main`.
 - Uses immutable SHA-pinned reusable workflow references.
 - Has at least one active maintainer and defined escalation contact.
 - No open Sev1/Sev2 incidents related to workflow reliability at rollout start.
 
-## Default Cohort Sizing Guidance
+### Default Cohort Sizing Guidance
 
 - Canary: 5-10% of targeted repositories, minimum 2.
 - Pilot: expand to 25-40%.
@@ -75,20 +79,20 @@ Adjust cohort size down when incident load is elevated or when control-plane ass
 
 ## Rollback Triggers and Response
 
-## Hard Rollback Triggers (Immediate)
+### Hard Rollback Triggers (Immediate)
 
 - Any confirmed security policy bypass or GHAS gate regression on required paths.
 - Repeated merge-blocking false negatives (policy violation merged without gate failure).
 - Automation loop behavior that repeatedly re-requests/re-posts reviews and degrades repo operations.
 - Sev1 incident attributable to rollout change.
 
-## Soft Rollback Triggers (Decision Within 30 Minutes)
+### Soft Rollback Triggers (Decision Within 30 Minutes)
 
 - False-positive rate exceeds threshold for a full observation window.
 - Escalation label not applied when gate failures occur.
 - Sustained drop in required-gate success below threshold without clear external cause.
 
-## Rollback Actions
+### Rollback Actions
 
 1. Freeze promotions to next phase.
 2. Revert to last known-good reusable workflow SHA in consuming paths.
@@ -120,14 +124,14 @@ Adjust cohort size down when incident load is elevated or when control-plane ass
 
 ## Go/No-Go Criteria
 
-## Go
+### Go
 
 - All phase-specific blocking thresholds are met.
 - No open Sev1/Sev2 incidents attributable to rollout change.
 - Rollback path validated and documented for current phase.
 - Required owners (Platform Ops, Release Manager, Security) sign off.
 
-## No-Go
+### No-Go
 
 - Any hard rollback trigger present.
 - Blocking metric threshold missed without approved exception.

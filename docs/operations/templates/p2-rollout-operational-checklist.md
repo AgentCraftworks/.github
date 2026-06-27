@@ -1,5 +1,7 @@
 # P2 Rollout Operational Checklist Template
 
+> **DRI** (Directly Responsible Individual): the single named person accountable for completing this checklist and signing off on the phase decision.
+
 > Copy this template per phase decision (Preflight, Canary, Pilot, General).
 
 ## Rollout Context
