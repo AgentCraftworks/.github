@@ -595,14 +595,18 @@ jobs:
               }
             }
 
-            const alreadyEscalated = (pr.labels || []).some(
-              (l) => (l.name || "").toLowerCase() === label.toLowerCase()
+            const escalationMarker = "<!-- acw-escalation:v1 -->";
+            const existingEscalationComments = await github.paginate(
+              "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
+              { owner, repo, issue_number, per_page: 100 }
+            );
+            const alreadyEscalatedByMarker = existingEscalationComments.some((c) =>
+              (c.body || "").includes(escalationMarker)
             );
 
-            if (alreadyEscalated) {
-              core.info(`Escalation label '${label}' already present. Skipping escalation comment.`);
+            if (alreadyEscalatedByMarker) {
+              core.info(`Escalation marker already present. Skipping escalation comment.`);
             } else {
-              const escalationMarker = "<!-- acw-escalation:v1 -->";
               const remediationByGate = {
                 "required-human-approval":
                   "- **required-human-approval**: Ensure the configured required human reviewer has an active APPROVED review on this PR.",

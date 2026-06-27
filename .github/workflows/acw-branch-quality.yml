@@ -42,109 +42,132 @@ jobs:
               fs.readFileSync(path.join(process.env.GITHUB_WORKSPACE, relPath), "utf8");
 
             const policyPath = "docs/standards/pr-readiness-policy-spec.json";
-            const policy = JSON.parse(read(policyPath));
             const template = read(".github/workflow-templates/acw-pr-readiness.yml");
             const wrapper = read(".github/workflows/acw-pr-readiness.yml");
             const reusable = read(".github/workflows/acw-pr-readiness-reusable.yml");
             const releases = read("docs/standards/reusable-workflow-releases.md");
 
             const errors = [];
+            let policy = null;
 
-            const immutablePattern = new RegExp(policy.immutable_pin_policy.allowed_reusable_workflow_ref_pattern);
-            const templateUsesMatch = template.match(
-              /uses:\s*(AgentCraftworks\/\.github\/\.github\/workflows\/acw-pr-readiness-reusable\.yml@[^\s]+)/
-            );
-            if (!templateUsesMatch) {
-              errors.push("Template workflow is missing reusable workflow 'uses:' reference.");
+            if (!fs.existsSync(path.join(process.env.GITHUB_WORKSPACE, policyPath))) {
+              errors.push(
+                `Missing required policy artifact '${policyPath}'. Add the policy file or update the contract lint configuration.`
+              );
             } else {
-              const usesRef = templateUsesMatch[1];
-              if (!immutablePattern.test(usesRef)) {
+              const policyRaw = read(policyPath);
+              try {
+                policy = JSON.parse(policyRaw);
+              } catch (error) {
                 errors.push(
-                  `Template reusable workflow pin is not immutable or not policy-compliant: '${usesRef}'.`
-                );
-              }
-
-              const sha = usesRef.split("@")[1] || "";
-              if (!/^[0-9a-f]{40}$/i.test(sha)) {
-                errors.push(`Template reusable workflow ref must be a 40-character commit SHA. Found '${sha}'.`);
-              } else if (!releases.includes(`| \`acw-pr-readiness-reusable\` |`) || !releases.includes(`\`${sha}\``)) {
-                errors.push(
-                  `Pinned SHA '${sha}' is not recorded in docs/standards/reusable-workflow-releases.md.`
+                  `Policy artifact '${policyPath}' contains invalid JSON and cannot be parsed. Ensure valid JSON syntax before merge.`
                 );
               }
             }
 
-            const extractWithValue = (content, key) => {
-              const match = content.match(new RegExp(`\\n\\s+${key}:\\s*([^\\n]+)`));
-              return (match?.[1] || "").trim();
-            };
-
-            const extractReusableDefault = (content, inputName) => {
-              const re = new RegExp(`${inputName}:[\\s\\S]*?default:\\s*([^\\n]+)`);
-              return (content.match(re)?.[1] || "").trim();
-            };
-
-            const expectedReviewer = String(policy.escalation.required_human_reviewer || "");
-            const expectedBranches = String(policy.ruleset_alignment.protected_branches.join(","));
-            const expectedLabel = String(policy.escalation.label || "");
-
-            const templateReviewer = extractWithValue(template, "required_human_reviewer");
-            const wrapperReviewer = extractWithValue(wrapper, "required_human_reviewer");
-            if (templateReviewer !== expectedReviewer || wrapperReviewer !== expectedReviewer) {
+            if (!policy || typeof policy !== "object") {
               errors.push(
-                `required_human_reviewer mismatch. Expected '${expectedReviewer}', template='${templateReviewer}', wrapper='${wrapperReviewer}'.`
+                `Policy artifact '${policyPath}' is not a valid governance contract object.`
               );
             }
 
-            const templateBranches = extractWithValue(template, "enforced_base_branches");
-            const wrapperBranches = extractWithValue(wrapper, "enforced_base_branches");
-            if (templateBranches !== expectedBranches || wrapperBranches !== expectedBranches) {
-              errors.push(
-                `enforced_base_branches mismatch. Expected '${expectedBranches}', template='${templateBranches}', wrapper='${wrapperBranches}'.`
+            if (policy && typeof policy === "object") {
+              const immutablePattern = new RegExp(policy.immutable_pin_policy.allowed_reusable_workflow_ref_pattern);
+              const templateUsesMatch = template.match(
+                /uses:\s*(AgentCraftworks\/\.github\/\.github\/workflows\/acw-pr-readiness-reusable\.yml@[^\s]+)/
               );
-            }
+              if (!templateUsesMatch) {
+                errors.push("Template workflow is missing reusable workflow 'uses:' reference.");
+              } else {
+                const usesRef = templateUsesMatch[1];
+                if (!immutablePattern.test(usesRef)) {
+                  errors.push(
+                    `Template reusable workflow pin is not immutable or not policy-compliant: '${usesRef}'.`
+                  );
+                }
 
-            const templateLabel = extractWithValue(template, "escalation_label");
-            const wrapperLabel = extractWithValue(wrapper, "escalation_label");
-            if (templateLabel !== expectedLabel || wrapperLabel !== expectedLabel) {
-              errors.push(
-                `escalation_label mismatch. Expected '${expectedLabel}', template='${templateLabel}', wrapper='${wrapperLabel}'.`
-              );
-            }
-
-            const reusableDefaultReviewer = extractReusableDefault(reusable, "required_human_reviewer");
-            const reusableDefaultBranches = extractReusableDefault(reusable, "enforced_base_branches");
-            const reusableDefaultLabel = extractReusableDefault(reusable, "escalation_label");
-            if (reusableDefaultReviewer !== expectedReviewer) {
-              errors.push(
-                `Reusable workflow default required_human_reviewer mismatch. Expected '${expectedReviewer}', found '${reusableDefaultReviewer}'.`
-              );
-            }
-            if (reusableDefaultBranches !== expectedBranches) {
-              errors.push(
-                `Reusable workflow default enforced_base_branches mismatch. Expected '${expectedBranches}', found '${reusableDefaultBranches}'.`
-              );
-            }
-            if (reusableDefaultLabel !== expectedLabel) {
-              errors.push(
-                `Reusable workflow default escalation_label mismatch. Expected '${expectedLabel}', found '${reusableDefaultLabel}'.`
-              );
-            }
-
-            const declaredJobIds = new Set(
-              [...reusable.matchAll(/^  ([a-z0-9-]+):\s*$/gm)].map((m) => m[1])
-            );
-            for (const requiredJobId of policy.ruleset_alignment.required_gate_job_ids || []) {
-              if (!declaredJobIds.has(requiredJobId)) {
-                errors.push(`Reusable workflow missing required gate job id '${requiredJobId}'.`);
+                const sha = usesRef.split("@")[1] || "";
+                if (!/^[0-9a-f]{40}$/i.test(sha)) {
+                  errors.push(`Template reusable workflow ref must be a 40-character commit SHA. Found '${sha}'.`);
+                } else if (!releases.includes(`| \`acw-pr-readiness-reusable\` |`) || !releases.includes(`\`${sha}\``)) {
+                  errors.push(
+                    `Pinned SHA '${sha}' is not recorded in docs/standards/reusable-workflow-releases.md.`
+                  );
+                }
               }
-            }
 
-            const marker = String(policy.escalation.comment_marker || "").trim();
-            if (marker && !reusable.includes(marker)) {
-              errors.push(
-                `Reusable escalation comment marker '${marker}' not found; escalation dedupe contract is not aligned.`
+              const extractWithValue = (content, key) => {
+                const match = content.match(new RegExp(`\\n\\s+${key}:\\s*([^\\n]+)`));
+                return (match?.[1] || "").trim();
+              };
+
+              const extractReusableDefault = (content, inputName) => {
+                const re = new RegExp(`${inputName}:[\\s\\S]*?default:\\s*([^\\n]+)`);
+                return (content.match(re)?.[1] || "").trim();
+              };
+
+              const expectedReviewer = String(policy.escalation.required_human_reviewer || "");
+              const expectedBranches = String(policy.ruleset_alignment.protected_branches.join(","));
+              const expectedLabel = String(policy.escalation.label || "");
+
+              const templateReviewer = extractWithValue(template, "required_human_reviewer");
+              const wrapperReviewer = extractWithValue(wrapper, "required_human_reviewer");
+              if (templateReviewer !== expectedReviewer || wrapperReviewer !== expectedReviewer) {
+                errors.push(
+                  `required_human_reviewer mismatch. Expected '${expectedReviewer}', template='${templateReviewer}', wrapper='${wrapperReviewer}'.`
+                );
+              }
+
+              const templateBranches = extractWithValue(template, "enforced_base_branches");
+              const wrapperBranches = extractWithValue(wrapper, "enforced_base_branches");
+              if (templateBranches !== expectedBranches || wrapperBranches !== expectedBranches) {
+                errors.push(
+                  `enforced_base_branches mismatch. Expected '${expectedBranches}', template='${templateBranches}', wrapper='${wrapperBranches}'.`
+                );
+              }
+
+              const templateLabel = extractWithValue(template, "escalation_label");
+              const wrapperLabel = extractWithValue(wrapper, "escalation_label");
+              if (templateLabel !== expectedLabel || wrapperLabel !== expectedLabel) {
+                errors.push(
+                  `escalation_label mismatch. Expected '${expectedLabel}', template='${templateLabel}', wrapper='${wrapperLabel}'.`
+                );
+              }
+
+              const reusableDefaultReviewer = extractReusableDefault(reusable, "required_human_reviewer");
+              const reusableDefaultBranches = extractReusableDefault(reusable, "enforced_base_branches");
+              const reusableDefaultLabel = extractReusableDefault(reusable, "escalation_label");
+              if (reusableDefaultReviewer !== expectedReviewer) {
+                errors.push(
+                  `Reusable workflow default required_human_reviewer mismatch. Expected '${expectedReviewer}', found '${reusableDefaultReviewer}'.`
+                );
+              }
+              if (reusableDefaultBranches !== expectedBranches) {
+                errors.push(
+                  `Reusable workflow default enforced_base_branches mismatch. Expected '${expectedBranches}', found '${reusableDefaultBranches}'.`
+                );
+              }
+              if (reusableDefaultLabel !== expectedLabel) {
+                errors.push(
+                  `Reusable workflow default escalation_label mismatch. Expected '${expectedLabel}', found '${reusableDefaultLabel}'.`
+                );
+              }
+
+              const declaredJobIds = new Set(
+                [...reusable.matchAll(/^  ([a-z0-9-]+):\s*$/gm)].map((m) => m[1])
               );
+              for (const requiredJobId of policy.ruleset_alignment.required_gate_job_ids || []) {
+                if (!declaredJobIds.has(requiredJobId)) {
+                  errors.push(`Reusable workflow missing required gate job id '${requiredJobId}'.`);
+                }
+              }
+
+              const marker = String(policy.escalation.comment_marker || "").trim();
+              if (marker && !reusable.includes(marker)) {
+                errors.push(
+                  `Reusable escalation comment marker '${marker}' not found; escalation dedupe contract is not aligned.`
+                );
+              }
             }
 
             if (errors.length > 0) {
