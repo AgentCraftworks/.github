@@ -459,9 +459,11 @@ jobs:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const pull_number = Number("${{ inputs.pull_number }}");
+            const pull_number = context.payload.pull_request?.number ?? Number("${{ inputs.pull_number }}");
             if (!pull_number) {
-              core.setFailed("Missing required input: pull_number");
+              core.setFailed(
+                "Missing pull request number (inputs.pull_number for workflow_call or context.payload.pull_request.number for pull_request)."
+              );
               return;
             }
 
