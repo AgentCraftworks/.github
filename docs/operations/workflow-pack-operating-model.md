@@ -73,7 +73,7 @@ Legend: **R** = Responsible, **A** = Accountable, **C** = Consulted, **I** = Inf
 
 ## Operating rhythm
 
-1. **Daily**: On-call and platform-owner review reliability signal changes and open incidents.
+1. **Daily**: On-call and platform-owner review reliability signals and the current open-incident queue.
 2. **Weekly**: Release-manager reviews SLI trend + release readiness, then publishes release/no-release decision.
 3. **Bi-weekly**: Compliance reviews governance correctness, exceptions, and remediation aging.
 4. **Monthly**: Joint operating review (release-manager, compliance, platform-owner) confirms policy fit and backlog priorities.
