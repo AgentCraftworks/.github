@@ -44,6 +44,9 @@ Canary testing may use mutable refs only in explicitly non-required paths:
 - Required workflow templates in this repository must always pin immutable SHAs.
 - Release manifest entries must exist before rollout PRs merge.
 - Any move to a new release SHA requires a reviewed PR.
+- Policy constants and escalation conventions are source-controlled in:
+  - `docs/standards/pr-readiness-policy-spec.json`
+  - `docs/standards/governance-enforcement-contract.md`
 
 ## Draft-First PR Readiness Protocol
 

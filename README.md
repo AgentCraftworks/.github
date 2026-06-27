@@ -10,6 +10,12 @@ This repo now provides:
 
 To onboard a repository, add the template workflow (or call the reusable workflow directly) and then enforce it with branch/ruleset required checks on `staging` and `main`.
 
+Policy and contract artifacts for governance automation:
+
+- `docs/standards/pr-readiness-policy-spec.json`
+- `docs/standards/governance-enforcement-contract.md`
+- `docs/standards/governance-enforcement-acceptance-tests.md`
+
 ### Draft-first PR hardening flow
 
 AgentCraftworks PR hardening is now draft-first by default:
