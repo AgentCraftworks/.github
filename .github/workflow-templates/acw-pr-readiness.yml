@@ -2,7 +2,7 @@
 # Org-wide template for repos to enable automated PR quality/security gates.
 # Calls acw-pr-readiness-reusable.yml for implementation.
 # See: .github/copilot/instructions.md (engagement levels), AGENTS.md (workflow conventions).
-name: ACW PR Readiness
+name: ACW-pr-readiness
 
 on:
   pull_request:

@@ -1,7 +1,7 @@
 # Engagement Level: T3 (Write) — PR wrapper that invokes the reusable PR readiness gates.
 # Emits required checks used by org rulesets on staging/main.
 
-name: pr-readiness
+name: ACW-pr-readiness
 
 on:
   pull_request:
