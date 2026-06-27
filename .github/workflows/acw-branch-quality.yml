@@ -42,8 +42,13 @@ jobs:
               fs.readFileSync(path.join(process.env.GITHUB_WORKSPACE, relPath), "utf8");
 
             const policyPath = "docs/standards/pr-readiness-policy-spec.json";
-            const policy = JSON.parse(read(policyPath));
-            const template = read(".github/workflow-templates/acw-pr-readiness.yml");
+            let policy;
+            try {
+              policy = JSON.parse(read(policyPath));
+            } catch (error) {
+              core.setFailed(`Failed to load/parse '${policyPath}': ${error.message}`);
+              return;
+            }
             const wrapper = read(".github/workflows/acw-pr-readiness.yml");
             const reusable = read(".github/workflows/acw-pr-readiness-reusable.yml");
             const releases = read("docs/standards/reusable-workflow-releases.md");
