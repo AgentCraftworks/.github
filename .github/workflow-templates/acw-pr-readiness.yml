@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   pr-readiness:
+    name: ACW-pr-readiness
     uses: AgentCraftworks/.github/.github/workflows/acw-pr-readiness-reusable.yml@d325d9e46b0d6d320c9c2ed9a43f6081f2429189
     with:
       pull_number: ${{ github.event.pull_request.number }}

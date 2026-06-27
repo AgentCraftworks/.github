@@ -28,6 +28,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   pr-readiness:
+    name: ACW-pr-readiness
     uses: ./.github/workflows/acw-pr-readiness-reusable.yml
     with:
       pull_number: ${{ github.event.pull_request.number }}
