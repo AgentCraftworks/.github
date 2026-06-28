@@ -53,6 +53,17 @@ steps:
     run: npx tsx src/jobs/your-job.ts
 ```
 
+### Secret Naming Convention for Reusable Workflows (required)
+
+- Reusable workflow interfaces (`workflow_call` secrets) must use generic names:
+  - `GH_APP_ID`
+  - `GH_APP_PRIVATE_KEY`
+- Reusable workflow internals must only reference `secrets.GH_APP_ID` and `secrets.GH_APP_PRIVATE_KEY`.
+- Repo/app-specific caller workflows may use app-specific secret names (for example `AGENTCRAFTWORKS_APP_ID` / `AGENTCRAFTWORKS_APP_PRIVATE_KEY`) but must map them into reusable interfaces as:
+  - `GH_APP_ID: ${{ secrets.<APP_SPECIFIC_ID_SECRET> }}`
+  - `GH_APP_PRIVATE_KEY: ${{ secrets.<APP_SPECIFIC_KEY_SECRET> }}`
+- Do not mix generic and app-specific secret pairs within the same workflow interface boundary.
+
 ### Azure OIDC Pattern (required for all Azure deployments)
 
 ```yaml
