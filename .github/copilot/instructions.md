@@ -15,7 +15,7 @@ When working with GitHub Actions workflows (`.github/workflows/`):
 ### Reusable workflow secret naming
 - Reusable workflow interfaces (`workflow_call`) must use generic secret names: `GH_APP_ID` and `GH_APP_PRIVATE_KEY`.
 - Inside reusable workflows, reference only `secrets.GH_APP_ID` / `secrets.GH_APP_PRIVATE_KEY`.
-- Caller workflows may keep app-specific secret storage names (for example `AGENTCRAFTWORKS_APP_ID` / `AGENTCRAFTWORKS_APP_PRIVATE_KEY`) but must map those to reusable inputs/secrets named `GH_APP_ID` / `GH_APP_PRIVATE_KEY`.
+- Caller workflows may keep app-specific secret storage names (for example `AGENTCRAFTWORKS_APP_ID` / `AGENTCRAFTWORKS_APP_PRIVATE_KEY`) but must map those to reusable workflow-call secrets named `GH_APP_ID` / `GH_APP_PRIVATE_KEY`.
 - Avoid mixed secret-name pairs inside the same workflow boundary.
 
 ### NEVER store Azure credentials as secrets
