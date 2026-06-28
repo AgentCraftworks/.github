@@ -26,3 +26,12 @@ AgentCraftworks PR hardening is now draft-first by default:
 2. Resolve pre-human checks in Draft (`Analyze`, `CodeQL`, GHAS=0, dependency review, unresolved thread gate, rubber duck review feedback).
 3. Mark **Ready for review** only after draft checks are green.
 4. Human approver + final review policy gates apply on ready PRs targeting enforced branches (`staging`, `main`).
+
+### Privilege-domain split for PR readiness
+
+PR readiness now runs in two domains:
+
+1. **Read-only analysis path (`pull_request`)** via `ACW-pr-readiness` for required gates (`required-human-approval`, `ghas-gate`, `dependency-review-gate`, unresolved thread gate) using read-only `GITHUB_TOKEN`.
+2. **Privileged mutation path (`pull_request_target`)** via `ACW-pr-readiness-privileged` for reviewer requests and escalation label/comment reconciliation using GitHub App credentials.
+
+This split prevents privileged secrets from being required in PR-head execution contexts and keeps write operations in a no-checkout privileged path.
