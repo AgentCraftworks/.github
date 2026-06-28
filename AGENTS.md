@@ -55,7 +55,7 @@ steps:
 
 ### Secret Naming Convention for Reusable Workflows (required)
 
-- Reusable workflow interfaces (`workflow_call` secrets/inputs) must use generic names:
+- Reusable workflow interfaces (`workflow_call` secrets) must use generic names:
   - `GH_APP_ID`
   - `GH_APP_PRIVATE_KEY`
 - Reusable workflow internals must only reference `secrets.GH_APP_ID` and `secrets.GH_APP_PRIVATE_KEY`.
