@@ -199,12 +199,16 @@ jobs:
 
       - name: Check required approval for protected base branches
         uses: actions/github-script@v8
+        env:
+          GH_PR_NUMBER: ${{ inputs.pull_number }}
+          GH_REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
+          GH_ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const pull_number = Number("${{ inputs.pull_number }}");
+            const pull_number = Number(process.env.GH_PR_NUMBER);
             if (!pull_number) {
               core.setFailed("Missing required input: pull_number");
               return;
@@ -226,13 +230,13 @@ jobs:
               return;
             }
 
-            const requiredReviewer = "${{ inputs.required_human_reviewer }}".trim().toLowerCase();
+            const requiredReviewer = (process.env.GH_REQUIRED_HUMAN_REVIEWER || "").trim().toLowerCase();
             if (!requiredReviewer) {
               core.notice("No required_human_reviewer configured. Skipping.");
               return;
             }
 
-            const enforcedBranches = "${{ inputs.enforced_base_branches }}"
+            const enforcedBranches = (process.env.GH_ENFORCED_BASE_BRANCHES || "")
               .split(",")
               .map((b) => b.trim())
               .filter(Boolean);
@@ -299,10 +303,12 @@ jobs:
 
       - name: Fail when unresolved review threads exist
         uses: actions/github-script@v8
+        env:
+          GH_PR_NUMBER: ${{ inputs.pull_number }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
-            const number = Number("${{ inputs.pull_number }}");
+            const number = Number(process.env.GH_PR_NUMBER);
             if (!number) {
               core.setFailed("Missing required input: pull_number");
               return;
@@ -361,8 +367,9 @@ jobs:
       contents: read
       pull-requests: read
       security-events: read
-    # Run when invoked for PR context (direct pull_request runs or workflow_call from a PR-triggered caller)
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_call' }}
+    # Run for PR context. A reusable workflow inherits the caller's event name, so include
+    # pull_request_target and pull_request_review.
+    if: ${{ contains(fromJSON('["pull_request","pull_request_target","pull_request_review","workflow_call"]'), github.event_name) }}
     steps:
       - name: Generate app token
         id: app-token
@@ -373,10 +380,12 @@ jobs:
 
       - name: Fail when open code scanning alerts exist for this PR
         uses: actions/github-script@v8
+        env:
+          GH_PR_NUMBER: ${{ inputs.pull_number }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
-            const number = Number("${{ inputs.pull_number }}");
+            const number = Number(process.env.GH_PR_NUMBER);
             if (!number) {
               core.setFailed("Missing required input: pull_number");
               return;
@@ -450,8 +459,9 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    # Run when invoked for PR context (direct pull_request runs or workflow_call from a PR-triggered caller)
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_call' }}
+    # Run for PR context. A reusable workflow inherits the caller's event name, so include
+    # pull_request_target and pull_request_review. No PR head code is checked out or executed.
+    if: ${{ contains(fromJSON('["pull_request","pull_request_target","pull_request_review","workflow_call"]'), github.event_name) }}
     steps:
       - name: Generate app token
         id: app-token
@@ -463,12 +473,14 @@ jobs:
       - name: Resolve PR base/head refs
         id: pr-refs
         uses: actions/github-script@v8
+        env:
+          GH_PR_NUMBER: ${{ inputs.pull_number }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const pull_number = context.payload.pull_request?.number ?? Number("${{ inputs.pull_number }}");
+            const pull_number = context.payload.pull_request?.number ?? Number(process.env.GH_PR_NUMBER);
             if (!pull_number) {
               core.setFailed(
                 "Missing pull request number (inputs.pull_number for workflow_call or context.payload.pull_request.number for pull_request)."
@@ -527,10 +539,15 @@ jobs:
 
       - name: Label and notify when any gate is failing
         uses: actions/github-script@v8
+        env:
+          GH_PR_NUMBER: ${{ inputs.pull_number }}
+          GH_ESCALATION_LABEL: ${{ inputs.escalation_label }}
+          GH_REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
+          GH_ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
-            const issue_number = Number("${{ inputs.pull_number }}");
+            const issue_number = Number(process.env.GH_PR_NUMBER);
             if (!issue_number) {
               core.setFailed("Missing required input: pull_number");
               return;
@@ -542,8 +559,8 @@ jobs:
 
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const label = "${{ inputs.escalation_label }}".trim();
-            const reviewer = "${{ inputs.required_human_reviewer }}".trim();
+            const label = (process.env.GH_ESCALATION_LABEL || "").trim();
+            const reviewer = (process.env.GH_REQUIRED_HUMAN_REVIEWER || "").trim();
             const prResponse = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
               owner,
               repo,
@@ -598,7 +615,7 @@ jobs:
             // Only request reviewer for enforced base branches, and only if they haven't already APPROVED
             if (
               reviewer &&
-              "${{ inputs.enforced_base_branches }}"
+              (process.env.GH_ENFORCED_BASE_BRANCHES || "")
                 .split(",")
                 .map((b) => b.trim())
                 .filter(Boolean)
