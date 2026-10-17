@@ -507,6 +507,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pr-refs.outputs.base_ref }}
 
       - name: Dependency review
         uses: actions/dependency-review-action@v4
