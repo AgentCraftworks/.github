@@ -43,7 +43,7 @@ on:
         type: string
         default: copilot,github-copilot[bot]
       escalation_label:
-        description: Label added when findings require human decision.
+        description: Durable decision label added on gate failure; only a verified decision reconciler may clear it.
         required: false
         type: string
         default: needs-human-decision
@@ -376,8 +376,8 @@ jobs:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const number = Number("${{ inputs.pull_number }}");
-            if (!number) {
-              core.setFailed("Missing required input: pull_number");
+            if (!Number.isSafeInteger(number) || number <= 0) {
+              core.setFailed("pull_number must be a positive safe integer identifying an existing pull request.");
               return;
             }
 
@@ -414,10 +414,10 @@ jobs:
                   status === 403
                     ? "Code scanning alerts are not accessible by the current GitHub App token."
                     : "Code scanning is not available for this repository.";
-                core.warning(`${reason} Skipping GHAS gate.`);
+                core.setFailed(`${reason} GHAS evaluation could not be completed.`);
                 await core.summary
                   .addHeading("GHAS Gate (Code Scanning Alerts)")
-                  .addRaw(`Skipped: ${reason}\n\n`)
+                  .addRaw(`Failed: ${reason}\n\n`)
                   .write();
                 return;
               }
@@ -465,10 +465,10 @@ jobs:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const pull_number = context.payload.pull_request?.number ?? Number("${{ inputs.pull_number }}");
-            if (!pull_number) {
+            const pull_number = Number("${{ inputs.pull_number }}");
+            if (!Number.isSafeInteger(pull_number) || pull_number <= 0) {
               core.setFailed(
-                "Missing pull request number (inputs.pull_number for workflow_call or context.payload.pull_request.number for pull_request)."
+                "pull_number must be a positive safe integer identifying an existing pull request."
               );
               return;
             }
@@ -479,7 +479,7 @@ jobs:
               pull_number,
             });
             const pr = prResponse.data;
-            const baseRef = pr.base?.sha || pr.base?.ref;
+            const baseRef = pr.base?.sha;
             const headRef = pr.head?.sha;
 
             if (!baseRef || !headRef) {
@@ -492,6 +492,9 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pr-refs.outputs.base_ref }}
+          persist-credentials: false
 
       - name: Dependency review
         uses: actions/dependency-review-action@v4
@@ -550,7 +553,7 @@ jobs:
 
             if (failing.length === 0) {
               core.info(
-                `All readiness gates pass. Leaving '${label || "decision"}' state unchanged for the durable decision reconciler.`
+                `No readiness failures reported. Leaving '${label || "decision"}' state unchanged for the durable decision reconciler.`
               );
               return;
             }
