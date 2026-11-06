@@ -24,7 +24,7 @@ Each test must assert:
 | AC-007 | No escalation on draft PR | Required gate fails but PR is draft | `status=fail` gate outcome preserved, escalation comment/label deferred |
 | AC-008 | Escalation idempotency | Failing state persists across rerun and escalation marker already exists | no duplicate escalation comment, no duplicate reviewer request |
 | AC-009 | Empty escalation label | `escalation_label` empty | gate failures still surfaced, label write skipped with warning |
-| AC-010 | GHAS unavailable handling | GitHub API for code scanning returns 403/404 | GHAS gate `skipped` with explicit reason, no silent pass |
+| AC-010 | GHAS unavailable handling | GitHub API for code scanning returns 403/404 | GHAS gate fails with explicit reason; unavailable evaluation is not a successful empty result |
 | AC-011 | Fork permission constraint | Comment/label write fails due to fork restrictions | failing status preserved, warning emitted for write failure |
 | AC-012 | Reviewer already approved | Required reviewer has latest `APPROVED` | no re-request of reviewer, approval gate passes |
 | AC-013 | Review threads unresolved | Active unresolved review threads exist | `status=fail`, unresolved thread violation and remediation guidance |
