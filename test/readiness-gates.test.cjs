@@ -114,6 +114,7 @@ test("dependency review uses only base checkout, explicit SHAs, and fails on inc
   assert.match(job, /persist-credentials: false/);
   assert.match(job, /base-ref: \$\{\{ steps\.pr-refs\.outputs\.base_ref \}\}/);
   assert.match(job, /head-ref: \$\{\{ steps\.pr-refs\.outputs\.head_ref \}\}/);
+  assert.match(job, /actions\/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48/);
   assert.doesNotMatch(job, /uses:\s+\.\//);
   await run("Require complete dependency graph data", {
     iterator: async function* (route, options) {
@@ -129,6 +130,12 @@ test("dependency review uses only base checkout, explicit SHAs, and fails on inc
     await assert.rejects(run("Require complete dependency graph data", {
       iterator: async function* () { throw Object.assign(new Error(`HTTP ${status}`), { status }); },
     }), new RegExp(`HTTP ${status}`));
+  }
+  await run("Require complete dependency review output", { env: { GH_DEPENDENCY_SUMMARY: "<h1>Dependency Review</h1>" } });
+  for (const summary of ["", "<h2>Snapshot Warnings</h2>"]) {
+    await assert.rejects(run("Require complete dependency review output", {
+      env: { GH_DEPENDENCY_SUMMARY: summary },
+    }), /missing or reports incomplete snapshots/);
   }
   await assert.rejects(run("Verify PR revisions remain current", {
     request: async () => ({ data: { ...pr, head: { sha: "d".repeat(40) } } }),

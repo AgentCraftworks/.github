@@ -528,12 +528,25 @@ jobs:
             }
 
       - name: Dependency review
-        uses: actions/dependency-review-action@v4
+        id: dependency-review
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
         with:
           base-ref: ${{ steps.pr-refs.outputs.base_ref }}
           head-ref: ${{ steps.pr-refs.outputs.head_ref }}
           fail-on-severity: moderate
           comment-summary-in-pr: never
+
+      - name: Require complete dependency review output
+        uses: actions/github-script@v8
+        env:
+          GH_DEPENDENCY_SUMMARY: ${{ steps.dependency-review.outputs.comment-content }}
+        with:
+          script: |
+            // This pinned action exposes snapshot warnings in its summary, not a dedicated output.
+            const summary = process.env.GH_DEPENDENCY_SUMMARY || "";
+            if (!summary || summary.includes("Snapshot Warnings")) {
+              throw new Error("Dependency review output is missing or reports incomplete snapshots.");
+            }
 
       - name: Verify PR revisions remain current
         uses: actions/github-script@v8
