@@ -1,0 +1,17 @@
+# Engagement Level: T1 (Read) - Tests untrusted PR changes without secrets or write permissions.
+name: Readiness regression tests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  readiness-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - run: node --test test/readiness-gates.test.cjs

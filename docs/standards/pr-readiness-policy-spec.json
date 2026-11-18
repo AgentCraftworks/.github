@@ -1,6 +1,6 @@
 {
   "policy_id": "acw-pr-readiness-governance",
-  "policy_version": "1.0.0",
+  "policy_version": "2.0.0",
   "immutable_pin_policy": {
     "enforced_paths": [
       ".github/workflow-templates/acw-pr-readiness.yml"
@@ -31,8 +31,8 @@
     "failing_gate_remediation": {
       "required-human-approval": "Ensure configured required human reviewer has an active APPROVED review.",
       "review-feedback-gate": "Resolve all active review threads or mark outdated with rationale.",
-      "ghas-gate": "Remediate open code scanning findings for the PR head SHA.",
-      "dependency-review-gate": "Update or replace vulnerable dependencies to satisfy policy severity threshold."
+      "ghas-gate": "Verify current PR merge scanning data is available and remediate open findings.",
+      "dependency-review-gate": "Verify dependency graph data is complete and remediate moderate+ vulnerabilities."
     }
   },
   "app_contract": {
