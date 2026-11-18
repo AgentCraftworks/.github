@@ -22,7 +22,7 @@ The app validator should accept this minimum payload:
 
 ```json
 {
-  "policy_version": "1.0.0",
+  "policy_version": "2.0.0",
   "repository": "owner/repo",
   "base_branch": "staging|main|other",
   "pull_request": {
@@ -71,7 +71,7 @@ Validation order must be deterministic and short-circuit only on unrecoverable i
    - Validate protected branches and required reviewer/label values are consistent between policy, template, wrapper, and reusable defaults.
    - Fail `fail` with `RULESET_ALIGNMENT_MISMATCH`.
 5. **Escalation convention**
-   - If any required gate result is `fail`, ensure:
+   - If any required gate result is not `pass`, ensure:
      - escalation label matches policy label,
      - escalation comment includes policy marker (`<!-- acw-escalation:v1 -->`),
      - remediation bullets are included per failing gate.
@@ -84,7 +84,7 @@ The app should emit machine-readable output:
 ```json
 {
   "policy_id": "acw-pr-readiness-governance",
-  "policy_version": "1.0.0",
+  "policy_version": "2.0.0",
   "status": "pass|fail|error|skipped",
   "violations": [
     {
@@ -111,8 +111,8 @@ When escalating, include:
 - Required remediation bullets:
   - `required-human-approval`: required reviewer must have active `APPROVED`.
   - `review-feedback-gate`: no unresolved active review threads.
-  - `ghas-gate`: no open code scanning alerts on PR head SHA.
-  - `dependency-review-gate`: no moderate+ dependency findings.
+  - `ghas-gate`: current PR merge commit has a successful analysis, no reported analysis errors, and no open alerts.
+  - `dependency-review-gate`: complete dependency graph data and no moderate+ dependency findings.
 
 ## Edge Cases and Failure Modes
 
@@ -120,7 +120,9 @@ When escalating, include:
 | --- | --- |
 | Draft PR | Do not escalate; defer comment/label until ready_for_review. |
 | Fork PR with restricted issue write | Keep gate result; emit warning on comment failure, do not mask failing status. |
-| GHAS unavailable (403/404) | Mark GHAS gate as skipped with explicit reason in summary, not silent pass. |
+| GHAS unavailable (403/404) | Fail the GHAS gate explicitly; unavailable scans are not a pass. |
+| Required gate skipped, cancelled, or missing | Fail the escalation check and escalate on ready PRs. |
+| Incomplete dependency graph snapshots | Fail dependency review rather than accepting partial data. |
 | Missing/empty escalation label input | Continue gate evaluation; skip label write and emit warning. |
 | Required checks renamed in workflow | Fail alignment validation with `RULESET_ALIGNMENT_MISMATCH`. |
 | Pinned SHA not in release manifest | Fail immutable release coherence check. |
@@ -137,6 +139,11 @@ When escalating, include:
   1. policy major version bump,
   2. corresponding reusable workflow release entry,
   3. migration note for app validator rollout.
+- Version 2 changes unavailable GHAS and incomplete required gates from non-blocking to fail-closed.
+  The app validator must explicitly support version 2 before rollout. A reviewed workflow release
+  and immutable consumer-pin updates are separate steps; this contract change does not publish them.
+- An analysis record does not establish that every configured scanner or language has completed.
+  Independent security review must establish the required scan coverage and sequencing before rollout.
 
 ## Acceptance Test Reference
 

@@ -199,12 +199,16 @@ jobs:
 
       - name: Check required approval for protected base branches
         uses: actions/github-script@v8
+        env:
+          GH_PR_NUMBER: ${{ inputs.pull_number }}
+          GH_REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
+          GH_ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const pull_number = Number("${{ inputs.pull_number }}");
+            const pull_number = Number(process.env.GH_PR_NUMBER);
             if (!pull_number) {
               core.setFailed("Missing required input: pull_number");
               return;
@@ -226,13 +230,13 @@ jobs:
               return;
             }
 
-            const requiredReviewer = "${{ inputs.required_human_reviewer }}".trim().toLowerCase();
+            const requiredReviewer = (process.env.GH_REQUIRED_HUMAN_REVIEWER || "").trim().toLowerCase();
             if (!requiredReviewer) {
               core.notice("No required_human_reviewer configured. Skipping.");
               return;
             }
 
-            const enforcedBranches = "${{ inputs.enforced_base_branches }}"
+            const enforcedBranches = (process.env.GH_ENFORCED_BASE_BRANCHES || "")
               .split(",")
               .map((b) => b.trim())
               .filter(Boolean);
@@ -299,10 +303,12 @@ jobs:
 
       - name: Fail when unresolved review threads exist
         uses: actions/github-script@v8
+        env:
+          GH_PR_NUMBER: ${{ inputs.pull_number }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
-            const number = Number("${{ inputs.pull_number }}");
+            const number = Number(process.env.GH_PR_NUMBER);
             if (!number) {
               core.setFailed("Missing required input: pull_number");
               return;
@@ -361,8 +367,6 @@ jobs:
       contents: read
       pull-requests: read
       security-events: read
-    # Run when invoked for PR context (direct pull_request runs or workflow_call from a PR-triggered caller)
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_call' }}
     steps:
       - name: Generate app token
         id: app-token
@@ -373,13 +377,16 @@ jobs:
 
       - name: Fail when open code scanning alerts exist for this PR
         uses: actions/github-script@v8
+        env:
+          GH_PR_NUMBER: ${{ inputs.pull_number }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
-            const number = Number("${{ inputs.pull_number }}");
-            if (!number) {
-              core.setFailed("Missing required input: pull_number");
-              return;
+            const number = Number(process.env.GH_PR_NUMBER);
+            if (!Number.isSafeInteger(number) || number < 1 ||
+                !["pull_request", "pull_request_target", "pull_request_review", "workflow_call"].includes(context.eventName) ||
+                (context.payload.pull_request && context.payload.pull_request.number !== number)) {
+              throw new Error("Unsupported event or invalid pull request number.");
             }
 
             const owner = context.repo.owner;
@@ -389,59 +396,60 @@ jobs:
               repo,
               pull_number: number,
             });
-            const headSha = prResponse.data.head?.sha || "";
-            if (!headSha) {
-              core.setFailed(`Could not determine head commit SHA for PR #${number}.`);
-              return;
+            const headSha = prResponse.data.head?.sha;
+            const baseSha = prResponse.data.base?.sha;
+            if (!/^[a-f0-9]{40}$/i.test(headSha || "") || !/^[a-f0-9]{40}$/i.test(baseSha || "")) {
+              throw new Error(`Could not determine commit SHAs for PR #${number}.`);
             }
 
-            // Use server-side ref scoping to reduce API volume on large repos.
-            let prAlerts = [];
+            const ref = `refs/pull/${number}/merge`;
             try {
-              prAlerts = await github.paginate(
-                "GET /repos/{owner}/{repo}/code-scanning/alerts",
-                {
-                  owner,
-                  repo,
-                  state: "open",
-                  ref: headSha,
-                  per_page: 100,
-                }
-              );
-            } catch (error) {
-              const status = Number(error?.status || error?.response?.status || 0);
-              if (status === 403 || status === 404) {
-                const reason =
-                  status === 403
-                    ? "Code scanning alerts are not accessible by the current GitHub App token."
-                    : "Code scanning is not available for this repository.";
-                core.warning(`${reason} Skipping GHAS gate.`);
-                await core.summary
-                  .addHeading("GHAS Gate (Code Scanning Alerts)")
-                  .addRaw(`Skipped: ${reason}\n\n`)
-                  .write();
-                return;
+              const merge = await github.request("GET /repos/{owner}/{repo}/commits/{ref}", { owner, repo, ref });
+              const mergeSha = merge.data.sha;
+              const parents = (merge.data.parents || []).map((parent) => parent.sha);
+              if (!/^[a-f0-9]{40}$/i.test(mergeSha || "") ||
+                  !parents.includes(baseSha) || !parents.includes(headSha)) {
+                throw new Error(`PR #${number} merge ref does not match the current base and head.`);
               }
-              throw error;
-            }
+              const analyses = await github.paginate(
+                "GET /repos/{owner}/{repo}/code-scanning/analyses",
+                { owner, repo, ref, per_page: 100 }
+              );
+              const current = analyses.filter((analysis) => analysis.commit_sha === mergeSha);
+              if (!current.length || current.some((analysis) => typeof analysis.error !== "string" || analysis.error)) {
+                throw new Error(`No valid successful code scanning analysis set for current PR #${number} merge commit.`);
+              }
+              const prAlerts = await github.paginate(
+                "GET /repos/{owner}/{repo}/code-scanning/alerts",
+                { owner, repo, state: "open", ref, per_page: 100 }
+              );
+              const latest = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+                owner, repo, pull_number: number,
+              });
+              const latestMerge = await github.request("GET /repos/{owner}/{repo}/commits/{ref}", { owner, repo, ref });
+              if (latest.data.head?.sha !== headSha || latest.data.base?.sha !== baseSha || latestMerge.data.sha !== mergeSha) {
+                throw new Error(`PR #${number} changed while code scanning results were checked.`);
+              }
+              await core.summary
+                .addHeading("GHAS Gate (Code Scanning Alerts)")
+                .addRaw(`Open code scanning alerts for PR #${number}: ${prAlerts.length}\n\n`)
+                .write();
 
-            await core.summary
-              .addHeading("GHAS Gate (Code Scanning Alerts)")
-              .addRaw(`Open code scanning alerts for PR #${number}: ${prAlerts.length}\n\n`)
-              .write();
-
-            if (prAlerts.length > 0) {
-              const details = prAlerts
-                .slice(0, 20)
-                .map((a) => {
+              if (prAlerts.length > 0) {
+                const details = prAlerts.slice(0, 20).map((a) => {
                   const rule = a.rule?.id || a.rule?.name || "unknown-rule";
                   const severity = a.rule?.severity || a.rule?.security_severity_level || "unknown";
                   const path = a.most_recent_instance?.location?.path || "unknown-path";
                   return `- [${severity}] ${rule} @ ${path}`;
-                })
-                .join("\n");
-
-              core.setFailed(`Open GHAS code scanning alerts found (${prAlerts.length}).\n${details}`);
+                }).join("\n");
+                core.setFailed(`Open GHAS code scanning alerts found (${prAlerts.length}).\n${details}`);
+              }
+            } catch (error) {
+              const status = Number(error?.status || error?.response?.status || 0);
+              if (status === 403 || status === 404) {
+                throw new Error(`Code scanning data or PR merge ref is unavailable or unauthorized (HTTP ${status}).`);
+              }
+              throw error;
             }
 
   dependency-review-gate:
@@ -450,8 +458,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    # Run when invoked for PR context (direct pull_request runs or workflow_call from a PR-triggered caller)
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_call' }}
     steps:
       - name: Generate app token
         id: app-token
@@ -463,17 +469,18 @@ jobs:
       - name: Resolve PR base/head refs
         id: pr-refs
         uses: actions/github-script@v8
+        env:
+          GH_PR_NUMBER: ${{ inputs.pull_number }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const pull_number = context.payload.pull_request?.number ?? Number("${{ inputs.pull_number }}");
-            if (!pull_number) {
-              core.setFailed(
-                "Missing pull request number (inputs.pull_number for workflow_call or context.payload.pull_request.number for pull_request)."
-              );
-              return;
+            const pull_number = Number(process.env.GH_PR_NUMBER);
+            if (!Number.isSafeInteger(pull_number) || pull_number < 1 ||
+                !["pull_request", "pull_request_target", "pull_request_review", "workflow_call"].includes(context.eventName) ||
+                (context.payload.pull_request && context.payload.pull_request.number !== pull_number)) {
+              throw new Error("Unsupported event or invalid pull request number.");
             }
 
             const prResponse = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
@@ -482,10 +489,10 @@ jobs:
               pull_number,
             });
             const pr = prResponse.data;
-            const baseRef = pr.base?.sha || pr.base?.ref;
+            const baseRef = pr.base?.sha;
             const headRef = pr.head?.sha;
 
-            if (!baseRef || !headRef) {
+            if (!/^[a-f0-9]{40}$/i.test(baseRef || "") || !/^[a-f0-9]{40}$/i.test(headRef || "")) {
               core.setFailed(`Could not determine base/head refs for PR #${pull_number}.`);
               return;
             }
@@ -495,14 +502,69 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pr-refs.outputs.base_ref }}
+          persist-credentials: false
+
+      - name: Require complete dependency graph data
+        uses: actions/github-script@v8
+        env:
+          GH_BASE_SHA: ${{ steps.pr-refs.outputs.base_ref }}
+          GH_HEAD_SHA: ${{ steps.pr-refs.outputs.head_ref }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const basehead = `${process.env.GH_BASE_SHA}...${process.env.GH_HEAD_SHA}`;
+            for await (const response of github.paginate.iterator(
+              "GET /repos/{owner}/{repo}/dependency-graph/compare/{basehead}",
+              { owner, repo, basehead, per_page: 100 }
+            )) {
+              if (!Array.isArray(response.data)) {
+                throw new Error("Dependency graph returned an invalid comparison.");
+              }
+              if (response.headers["x-github-dependency-graph-snapshot-warnings"]) {
+                throw new Error("Dependency graph reported incomplete snapshots; dependency review cannot pass.");
+              }
+            }
 
       - name: Dependency review
-        uses: actions/dependency-review-action@v4
+        id: dependency-review
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
         with:
           base-ref: ${{ steps.pr-refs.outputs.base_ref }}
           head-ref: ${{ steps.pr-refs.outputs.head_ref }}
           fail-on-severity: moderate
           comment-summary-in-pr: never
+
+      - name: Require complete dependency review output
+        uses: actions/github-script@v8
+        env:
+          GH_DEPENDENCY_SUMMARY: ${{ steps.dependency-review.outputs.comment-content }}
+        with:
+          script: |
+            // This pinned action exposes snapshot warnings in its summary, not a dedicated output.
+            const summary = process.env.GH_DEPENDENCY_SUMMARY || "";
+            if (!summary || summary.includes("Snapshot Warnings")) {
+              throw new Error("Dependency review output is missing or reports incomplete snapshots.");
+            }
+
+      - name: Verify PR revisions remain current
+        uses: actions/github-script@v8
+        env:
+          GH_PR_NUMBER: ${{ inputs.pull_number }}
+          GH_BASE_SHA: ${{ steps.pr-refs.outputs.base_ref }}
+          GH_HEAD_SHA: ${{ steps.pr-refs.outputs.head_ref }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pull_number = Number(process.env.GH_PR_NUMBER);
+            const response = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+              owner, repo, pull_number,
+            });
+            if (response.data.base?.sha !== process.env.GH_BASE_SHA ||
+                response.data.head?.sha !== process.env.GH_HEAD_SHA) {
+              throw new Error(`PR #${pull_number} changed during dependency review.`);
+            }
 
   escalate-human-decision:
     name: Escalate unresolved findings for human decision
@@ -527,23 +589,31 @@ jobs:
 
       - name: Label and notify when any gate is failing
         uses: actions/github-script@v8
+        env:
+          GH_PR_NUMBER: ${{ inputs.pull_number }}
+          GH_ESCALATION_LABEL: ${{ inputs.escalation_label }}
+          GH_REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
+          GH_ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
-            const issue_number = Number("${{ inputs.pull_number }}");
+            const issue_number = Number(process.env.GH_PR_NUMBER);
             if (!issue_number) {
               core.setFailed("Missing required input: pull_number");
               return;
             }
 
-            const failing = Object.entries(${{ toJson(needs) }})
-              .filter(([, value]) => value.result === "failure")
-              .map(([key]) => key);
+            const results = ${{ toJson(needs) }};
+            const required = ["required-human-approval", "review-feedback-gate", "ghas-gate", "dependency-review-gate"];
+            const failing = required.filter((gate) => results[gate]?.result !== "success");
+            if (failing.length) {
+              core.setFailed(`Required gates failed or did not complete: ${failing.join(", ")}`);
+            }
 
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const label = "${{ inputs.escalation_label }}".trim();
-            const reviewer = "${{ inputs.required_human_reviewer }}".trim();
+            const label = (process.env.GH_ESCALATION_LABEL || "").trim();
+            const reviewer = (process.env.GH_REQUIRED_HUMAN_REVIEWER || "").trim();
             const prResponse = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
               owner,
               repo,
@@ -598,7 +668,7 @@ jobs:
             // Only request reviewer for enforced base branches, and only if they haven't already APPROVED
             if (
               reviewer &&
-              "${{ inputs.enforced_base_branches }}"
+              (process.env.GH_ENFORCED_BASE_BRANCHES || "")
                 .split(",")
                 .map((b) => b.trim())
                 .filter(Boolean)
@@ -665,9 +735,9 @@ jobs:
                 "review-feedback-gate":
                   "- **review-feedback-gate**: Resolve all active review threads or mark outdated threads as resolved with rationale.",
                 "ghas-gate":
-                  "- **ghas-gate**: Remediate open code scanning findings on the PR head SHA, then rerun checks.",
+                  "- **ghas-gate**: Inspect scan availability and findings for the current PR merge commit, then rerun checks.",
                 "dependency-review-gate":
-                  "- **dependency-review-gate**: Update or replace flagged dependencies to remove moderate+ vulnerabilities."
+                  "- **dependency-review-gate**: Inspect dependency graph availability and remediate moderate+ vulnerabilities."
               };
               const remediationLines = failing.map(
                 (gate) =>
