@@ -493,8 +493,8 @@ jobs:
     permissions:
       contents: read
       checks: read
-      pull-requests: write
-      issues: write
+      pull-requests: read
+      issues: read
     needs:
       - required-human-approval
       - review-feedback-gate
