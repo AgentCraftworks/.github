@@ -560,7 +560,8 @@ jobs:
                   repo,
                   ref: headSha,
                   per_page: 100,
-                }
+                },
+                (response) => response.data.check_runs
               );
               const latestByName = new Map();
               for (const run of checkRuns) {
