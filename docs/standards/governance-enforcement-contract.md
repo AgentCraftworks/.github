@@ -13,8 +13,17 @@ Acceptance coverage is defined in `docs/standards/governance-enforcement-accepta
 - Source policy artifacts live in `AgentCraftworks/.github`.
 - Direct enforcement in this repo is implemented in:
   - `.github/workflows/acw-branch-quality.yml` (`policy-contract-lint` job)
-  - `.github/workflows/acw-pr-readiness-reusable.yml` (escalation messaging + marker)
+  - `.github/workflows/acw-pr-readiness-reusable.yml` (gate evaluation + escalation messaging + marker)
+  - `.github/workflows/acw-pr-readiness.yml` (read-only PR analysis path)
+  - `.github/workflows/acw-pr-readiness-privileged.yml` (privileged PR mutation path)
 - AgentCraftworks app repository enforcement must consume this contract as the source of truth.
+
+## Privileged Execution Boundary (Normative)
+
+- `pull_request` workflows must run required quality/security gates with read-only token scope and without GitHub App private key material.
+- Reviewer assignment and escalation mutations (labels/comments/reviewer requests) must run in `pull_request_target` context.
+- Privileged jobs must not execute PR head code (no PR-head checkout in privileged path).
+- Reusable workflow interfaces may accept `GH_APP_ID` / `GH_APP_PRIVATE_KEY`, but callers should pass those secrets only to privileged invocation paths.
 
 ## Inputs (App Repo Contract)
 
@@ -75,7 +84,7 @@ Validation order must be deterministic and short-circuit only on unrecoverable i
      - escalation label matches policy label,
      - escalation comment includes policy marker (`<!-- acw-escalation:v1 -->`),
      - remediation bullets are included per failing gate.
-   - If all gates pass, remove escalation label if present.
+   - If all gates pass, leave the escalation label unchanged; reserve label removal for the durable decision reconciler after evidence verification.
 
 ## Outputs (App Repo Contract)
 
@@ -119,6 +128,7 @@ When escalating, include:
 | Case | Expected Behavior |
 | --- | --- |
 | Draft PR | Do not escalate; defer comment/label until ready_for_review. |
+| Privileged secret exposure risk | Keep PR analysis in read-only `pull_request`; restrict app-token write mutations to `pull_request_target` without PR-head checkout. |
 | Fork PR with restricted issue write | Keep gate result; emit warning on comment failure, do not mask failing status. |
 | GHAS unavailable (403/404) | Fail the gate with an explicit reason; do not treat unavailable scanning as a pass. |
 | Required gate skipped, cancelled, or missing | Fail the aggregate escalation check and do not remove the escalation label. |

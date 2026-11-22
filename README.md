@@ -17,6 +17,27 @@ The futures strategy covers the next strategic layer for AgentCraftworks: better
 
 To onboard a repository, add the template workflow (or call the reusable workflow directly) and then enforce it with branch/ruleset required checks on `staging` and `main`.
 
+### Reusable readiness invocation and decision lifecycle
+
+Every invocation requires a positive integer `pull_number` identifying an existing PR
+in the caller repository. Both security gates evaluate that explicit PR, regardless of
+the caller event (`pull_request`, `pull_request_target`, review events, or non-PR
+events such as `workflow_dispatch`). There is no non-PR/no-target success mode:
+invalid or nonexistent PR inputs fail explicitly. GHAS permission/unavailability
+errors fail rather than reporting an empty successful scan. A valid alert query with
+zero results passes; it does not attest that all external scan producers have finished.
+Dependency review checks out the trusted PR base SHA without persisting credentials;
+the untrusted head SHA is used only as dependency-comparison data.
+
+Readiness failures may add `needs-human-decision`, but passing readiness never clears
+it. Only the product-side decision reconciler may clear that durable marker after
+verifying resolution evidence. The separate `copilot-review/needs-human-decision`
+required check enforces unresolved decisions; the shared escalation job is not a
+replacement for that check. `enforced_base_branches` still controls routine human
+approval and does not imply a routine approval requirement on integration branches.
+
+Run the focused regression tests with `node --test tests/pr-readiness.test.mjs`.
+
 Policy and contract artifacts for governance automation:
 
 - `docs/standards/pr-readiness-policy-spec.json`
@@ -31,3 +52,12 @@ AgentCraftworks PR hardening is now draft-first by default:
 2. Resolve pre-human checks in Draft (`Analyze`, `CodeQL`, GHAS=0, dependency review, unresolved thread gate, rubber duck review feedback).
 3. Mark **Ready for review** only after draft checks are green.
 4. Human approver + final review policy gates apply on ready PRs targeting enforced branches (`staging`, `main`).
+
+### Privilege-domain split for PR readiness
+
+PR readiness now runs in two domains:
+
+1. **Read-only analysis path (`pull_request`)** via `ACW-pr-readiness` for required gates (`required-human-approval`, `ghas-gate`, `dependency-review-gate`, unresolved thread gate) using read-only `GITHUB_TOKEN`.
+2. **Privileged mutation path (`pull_request_target`)** via `ACW-pr-readiness-privileged` for reviewer requests and escalation label/comment reconciliation using GitHub App credentials.
+
+This split prevents privileged secrets from being required in PR-head execution contexts and keeps write operations in a no-checkout privileged path.

@@ -9,9 +9,9 @@ on:
   workflow_call:
     secrets:
       GH_APP_ID:
-        required: true
+        required: false
       GH_APP_PRIVATE_KEY:
-        required: true
+        required: false
     inputs:
       pull_number:
         description: Pull request number from caller workflow.
@@ -43,7 +43,7 @@ on:
         type: string
         default: copilot,github-copilot[bot]
       escalation_label:
-        description: Label added when findings require human decision.
+        description: Durable decision label added on gate failure; only a verified decision reconciler may clear it.
         required: false
         type: string
         default: needs-human-decision
@@ -52,8 +52,19 @@ on:
         required: false
         type: string
         default: CodeQL
+      enable_privileged_actions:
+        description: Enable reviewer/label/comment write actions (requires GH_APP_* secrets).
+        required: false
+        type: boolean
+        default: false
+      run_core_gates:
+        description: Run required approval, review feedback, GHAS, and dependency gates.
+        required: false
+        type: boolean
+        default: true
 permissions:
   contents: read
+  checks: read
   pull-requests: read
   issues: read
   security-events: read
@@ -62,7 +73,7 @@ jobs:
   request-reviewers:
     name: Request Copilot + human reviewer
     runs-on: ubuntu-latest
-    if: ${{ contains(fromJson('["opened","reopened","synchronize","ready_for_review","review_requested"]'), inputs.trigger_action) }}
+    if: ${{ inputs.enable_privileged_actions && contains(fromJson('["opened","reopened","synchronize","ready_for_review","review_requested"]'), inputs.trigger_action) }}
     permissions:
       contents: read
       pull-requests: read
@@ -192,21 +203,15 @@ jobs:
   required-human-approval:
     name: required-human-approval
     runs-on: ubuntu-latest
+    if: ${{ inputs.run_core_gates }}
     permissions:
       contents: read
       pull-requests: read
     steps:
-      - name: Generate app token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.GH_APP_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-
       - name: Check required approval for protected base branches
         uses: actions/github-script@v8
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ github.token }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
@@ -292,21 +297,15 @@ jobs:
   review-feedback-gate:
     name: Validate unresolved review threads
     runs-on: ubuntu-latest
+    if: ${{ inputs.run_core_gates }}
     permissions:
       contents: read
       pull-requests: read
     steps:
-      - name: Generate app token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.GH_APP_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-
       - name: Fail when unresolved review threads exist
         uses: actions/github-script@v8
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ github.token }}
           script: |
             const number = Number("${{ inputs.pull_number }}");
             if (!number) {
@@ -360,6 +359,7 @@ jobs:
               );
             }
 
+  # Reusable workflows retain the caller event (including pull_request_target); validate the PR in each gate instead of filtering by event name.
   ghas-gate:
     name: ghas-gate
     runs-on: ubuntu-latest
@@ -368,20 +368,13 @@ jobs:
       pull-requests: read
       security-events: read
     steps:
-      - name: Generate app token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.GH_APP_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-
       - name: Fail when open code scanning alerts exist for this PR
         uses: actions/github-script@v8
         env:
           GH_PR_NUMBER: ${{ inputs.pull_number }}
           GH_REQUIRED_CODE_SCANNING_CATEGORIES: ${{ inputs.required_code_scanning_categories }}
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ github.token }}
           script: |
             const number = Number(process.env.GH_PR_NUMBER);
             if (!Number.isSafeInteger(number) || number < 1 ||
@@ -526,20 +519,13 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - name: Generate app token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.GH_APP_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-
       - name: Resolve PR base/head refs
         id: pr-refs
         uses: actions/github-script@v8
         env:
           GH_PR_NUMBER: ${{ inputs.pull_number }}
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ github.token }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
@@ -572,7 +558,6 @@ jobs:
         with:
           ref: ${{ steps.pr-refs.outputs.base_ref }}
           persist-credentials: false
-
       - name: Require complete dependency graph data
         uses: actions/github-script@v8
         env:
@@ -618,7 +603,7 @@ jobs:
           GH_BASE_SHA: ${{ steps.pr-refs.outputs.base_ref }}
           GH_HEAD_SHA: ${{ steps.pr-refs.outputs.head_ref }}
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ github.token }}
           script: |
             const { owner, repo } = context.repo;
             const pull_number = Number(process.env.GH_PR_NUMBER);
@@ -635,6 +620,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      checks: read
       pull-requests: read
       issues: read
     needs:
@@ -645,6 +631,7 @@ jobs:
     if: ${{ !cancelled() }}
     steps:
       - name: Generate app token
+        if: ${{ inputs.enable_privileged_actions }}
         id: app-token
         uses: actions/create-github-app-token@v1
         with:
@@ -659,7 +646,7 @@ jobs:
           GH_REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
           GH_ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ inputs.enable_privileged_actions && steps.app-token.outputs.token || github.token }}
           script: |
             const issue_number = Number(process.env.GH_PR_NUMBER);
             if (!issue_number) {
@@ -667,12 +654,9 @@ jobs:
               return;
             }
 
-            const results = ${{ toJson(needs) }};
-            const required = ["required-human-approval", "review-feedback-gate", "ghas-gate", "dependency-review-gate"];
-            const failing = required.filter((gate) => results[gate]?.result !== "success");
-            if (failing.length) {
-              core.setFailed(`Required gates failed or did not complete: ${failing.join(", ")}`);
-            }
+            const privileged = "${{ inputs.enable_privileged_actions }}" === "true";
+            const runCoreGates = "${{ inputs.run_core_gates }}" === "true";
+            let failing = [];
 
             const owner = context.repo.owner;
             const repo = context.repo.repo;
@@ -685,29 +669,95 @@ jobs:
             });
             const pr = prResponse.data;
 
-            if (failing.length === 0) {
-              // Clean up escalation label when all gates pass
-              if (label) {
-                try {
-                  await github.request("DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}", {
-                    owner,
-                    repo,
-                    issue_number,
-                    name: label,
-                  });
-                  core.info(`Removed escalation label '${label}' (all gates passing).`);
-                } catch (error) {
-                  // Label might not exist; that's fine
-                  if (error.status !== 404) {
-                    core.warning(`Could not remove label '${label}': ${error.message}`);
-                  }
+            if (runCoreGates) {
+              failing = Object.entries(${{ toJson(needs) }})
+                .filter(([, value]) => value.result === "failure")
+                .map(([key]) => key);
+            } else {
+              const requiredContexts = [
+                "ACW-pr-readiness / required-human-approval",
+                "ACW-pr-readiness / Validate unresolved review threads",
+                "ACW-pr-readiness / ghas-gate",
+                "ACW-pr-readiness / dependency-review-gate",
+                "ACW-pr-readiness / Escalate unresolved findings for human decision",
+              ];
+              const headSha = pr.head?.sha || "";
+              if (!headSha) {
+                core.warning(`Could not determine head SHA for PR #${issue_number}; skipping privileged escalation sync.`);
+                return;
+              }
+
+              const checkRuns = await github.paginate(
+                "GET /repos/{owner}/{repo}/commits/{ref}/check-runs",
+                {
+                  owner,
+                  repo,
+                  ref: headSha,
+                  per_page: 100,
+                },
+                (response) => response.data.check_runs
+              );
+              const latestByName = new Map();
+              for (const run of checkRuns) {
+                const name = run.name || "";
+                if (!requiredContexts.includes(name)) {
+                  continue;
+                }
+                const previous = latestByName.get(name);
+                if (!previous || new Date(run.started_at || 0) > new Date(previous.started_at || 0)) {
+                  latestByName.set(name, run);
                 }
               }
+
+              const pending = [];
+              for (const [name, run] of latestByName.entries()) {
+                if (run.status !== "completed") {
+                  pending.push(name);
+                }
+              }
+              if (pending.length > 0) {
+                core.info(`Required checks still in progress (${pending.join(", ")}). Deferring escalation sync.`);
+                return;
+              }
+
+              const failingConclusions = new Set(["failure", "timed_out", "cancelled", "startup_failure", "action_required"]);
+              for (const gate of [
+                "required-human-approval",
+                "ghas-gate",
+                "dependency-review-gate",
+                "Escalate unresolved findings for human decision",
+              ]) {
+                const contextName = `ACW-pr-readiness / ${gate}`;
+                const run = latestByName.get(contextName);
+                if (!run) {
+                  continue;
+                }
+                if (failingConclusions.has((run.conclusion || "").toLowerCase())) {
+                  // Keep gate keys aligned with remediation map keys below.
+                  failing.push(gate === "Escalate unresolved findings for human decision" ? "escalation-sync" : gate);
+                }
+              }
+
+              const reviewFeedbackRun = latestByName.get("ACW-pr-readiness / Validate unresolved review threads");
+              if (reviewFeedbackRun && failingConclusions.has((reviewFeedbackRun.conclusion || "").toLowerCase())) {
+                failing.push("review-feedback-gate");
+              }
+            }
+
+            if (failing.length === 0) {
+              core.info(
+                `No readiness failures reported. Leaving '${label || "decision"}' state unchanged for the durable decision reconciler.`
+              );
               return;
             }
 
             if (pr.draft) {
               core.info(`PR #${issue_number} is draft. Skipping escalation/notifications until ready_for_review.`);
+              return;
+            }
+
+            if (!privileged) {
+              core.notice(`Failing gates (${failing.join(", ")}) detected in read-only mode; escalation mutation is deferred to pull_request_target.`);
               return;
             }
 
@@ -799,9 +849,11 @@ jobs:
                 "review-feedback-gate":
                   "- **review-feedback-gate**: Resolve all active review threads or mark outdated threads as resolved with rationale.",
                 "ghas-gate":
-                  "- **ghas-gate**: Inspect scan availability and findings for the current PR merge commit, then rerun checks.",
+                  "- **ghas-gate**: Inspect scan availability and findings for the current PR head commit, then rerun checks.",
                 "dependency-review-gate":
-                  "- **dependency-review-gate**: Inspect dependency graph availability and remediate moderate+ vulnerabilities."
+                  "- **dependency-review-gate**: Inspect dependency graph availability and remediate moderate+ vulnerabilities.",
+                "escalation-sync":
+                  "- **escalation-sync**: Re-run ACW-pr-readiness after resolving failing required checks so escalation state can be reconciled."
               };
               const remediationLines = failing.map(
                 (gate) =>

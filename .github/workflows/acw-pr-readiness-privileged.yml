@@ -1,0 +1,44 @@
+# Engagement Level: T3 (Write) — Privileged PR automation path.
+# Runs in pull_request_target context for reviewer/escalation mutations only.
+# Does not check out PR head code.
+
+name: ACW-pr-readiness-privileged
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - converted_to_draft
+      - edited
+      - ready_for_review
+      - review_requested
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: acw-pr-readiness-privileged-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-readiness-privileged:
+    name: ACW-pr-readiness-privileged
+    uses: ./.github/workflows/acw-pr-readiness-reusable.yml
+    with:
+      pull_number: ${{ github.event.pull_request.number }}
+      trigger_action: ${{ github.event.action }}
+      required_human_reviewer: jenperret
+      enforced_base_branches: staging,main
+      request_copilot_review: true
+      copilot_reviewer_candidates: copilot,github-copilot[bot]
+      escalation_label: needs-human-decision
+      enable_privileged_actions: true
+      run_core_gates: false
+    secrets:
+      GH_APP_ID: ${{ secrets.AGENTCRAFTWORKS_APP_ID }}
+      GH_APP_PRIVATE_KEY: ${{ secrets.AGENTCRAFTWORKS_APP_PRIVATE_KEY }}
