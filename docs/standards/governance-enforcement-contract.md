@@ -84,7 +84,7 @@ Validation order must be deterministic and short-circuit only on unrecoverable i
      - escalation label matches policy label,
      - escalation comment includes policy marker (`<!-- acw-escalation:v1 -->`),
      - remediation bullets are included per failing gate.
-   - If all gates pass, remove escalation label if present.
+   - If all gates pass, leave the escalation label unchanged; reserve label removal for the durable decision reconciler after evidence verification.
 
 ## Outputs (App Repo Contract)
 

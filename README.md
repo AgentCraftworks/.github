@@ -12,6 +12,27 @@ This repo now provides:
 
 To onboard a repository, add the template workflow (or call the reusable workflow directly) and then enforce it with branch/ruleset required checks on `staging` and `main`.
 
+### Reusable readiness invocation and decision lifecycle
+
+Every invocation requires a positive integer `pull_number` identifying an existing PR
+in the caller repository. Both security gates evaluate that explicit PR, regardless of
+the caller event (`pull_request`, `pull_request_target`, review events, or non-PR
+events such as `workflow_dispatch`). There is no non-PR/no-target success mode:
+invalid or nonexistent PR inputs fail explicitly. GHAS permission/unavailability
+errors fail rather than reporting an empty successful scan. A valid alert query with
+zero results passes; it does not attest that all external scan producers have finished.
+Dependency review checks out the trusted PR base SHA without persisting credentials;
+the untrusted head SHA is used only as dependency-comparison data.
+
+Readiness failures may add `needs-human-decision`, but passing readiness never clears
+it. Only the product-side decision reconciler may clear that durable marker after
+verifying resolution evidence. The separate `copilot-review/needs-human-decision`
+required check enforces unresolved decisions; the shared escalation job is not a
+replacement for that check. `enforced_base_branches` still controls routine human
+approval and does not imply a routine approval requirement on integration branches.
+
+Run the focused regression tests with `node --test tests/pr-readiness.test.mjs`.
+
 Policy and contract artifacts for governance automation:
 
 - `docs/standards/pr-readiness-policy-spec.json`
