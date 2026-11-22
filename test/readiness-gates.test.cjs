@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const path = require("node:path");
 
-const workflow = fs.readFileSync(path.join(__dirname, "../.github/workflows/acw-pr-readiness-reusable.yml"), "utf8");
+const workflow = fs.readFileSync(path.join(__dirname, "../.github/workflows/acw-pr-readiness-reusable.yml"), "utf8").replace(/\r\n/g, "\n");
 const base = "a".repeat(40);
 const head = "b".repeat(40);
 const merge = "c".repeat(40);
@@ -43,7 +43,7 @@ async function run(name, { event = "pull_request_target", payload = { pull_reque
   return { failures, outputs, calls };
 }
 
-function scan({ analyses = [{ commit_sha: merge, error: "", tool: { name: "CodeQL" }, category: "CodeQL" }], alerts = [], status, changed = false } = {}) {
+function scan({ analyses = [{ commit_sha: head, error: "", tool: { name: "CodeQL" }, category: "CodeQL" }], alerts = [], status, changed = false } = {}) {
   let pulls = 0;
   return {
     request: async (route) => route.includes("/pulls/")
@@ -51,7 +51,7 @@ function scan({ analyses = [{ commit_sha: merge, error: "", tool: { name: "CodeQ
       : { data: { sha: merge, parents: [{ sha: base }, { sha: head }] } },
     paginate: async (route, options) => {
       if (status) throw Object.assign(new Error("unavailable"), { status });
-      assert.equal(options.ref, "refs/pull/42/merge");
+      assert.equal(options.ref, "refs/pull/42/head");
       return route.endsWith("/analyses") ? analyses : alerts;
     },
   };
@@ -86,10 +86,9 @@ test("reject unsupported events, mismatched PRs, and invalid commit SHAs", async
 
 test("fail closed on unavailable, missing, stale, failed, or changed scans and on alerts", async () => {
   for (const analyses of [[],
-    [{ commit_sha: head, error: "", tool: { name: "CodeQL" }, category: "CodeQL" }],
-    [{ commit_sha: merge, error: "failed", tool: { name: "CodeQL" }, category: "CodeQL" }],
-    [{ commit_sha: merge, error: "", warning: "results were ignored", tool: { name: "CodeQL" }, category: "CodeQL" }],
-    [{ commit_sha: merge, tool: { name: "CodeQL" }, category: "CodeQL" }]]) {
+    [{ commit_sha: head, error: "failed", tool: { name: "CodeQL" }, category: "CodeQL" }],
+    [{ commit_sha: head, error: "", warning: "results were ignored", tool: { name: "CodeQL" }, category: "CodeQL" }],
+    [{ commit_sha: head, tool: { name: "CodeQL" }, category: "CodeQL" }]]) {
     await assert.rejects(run("Fail when open code scanning alerts exist for this PR", scan({ analyses })),
       /No valid successful|Missing successful code scanning category|incomplete or failed analysis/);
   }
@@ -104,7 +103,7 @@ test("fail closed on unavailable, missing, stale, failed, or changed scans and o
 test("require every configured category and ignore superseded analyses after successful reruns", async () => {
   await assert.rejects(run("Fail when open code scanning alerts exist for this PR", {
     ...scan({
-      analyses: [{ commit_sha: merge, error: "", tool: { name: "CodeQL" }, category: "CodeQL" }],
+      analyses: [{ commit_sha: head, error: "", tool: { name: "CodeQL" }, category: "CodeQL" }],
     }),
     env: { GH_REQUIRED_CODE_SCANNING_CATEGORIES: "CodeQL,JavaScript" },
   }), /Missing successful code scanning category 'JavaScript'/);
@@ -114,7 +113,7 @@ test("require every configured category and ignore superseded analyses after suc
       analyses: [
         {
           id: 1,
-          commit_sha: merge,
+          commit_sha: head,
           created_at: "2026-11-22T01:00:00Z",
           error: "failed",
           tool: { name: "CodeQL", guid: "codeql" },
@@ -124,7 +123,7 @@ test("require every configured category and ignore superseded analyses after suc
         },
         {
           id: 2,
-          commit_sha: merge,
+          commit_sha: head,
           created_at: "2026-11-22T02:00:00Z",
           error: "",
           tool: { name: "CodeQL", guid: "codeql" },
@@ -143,7 +142,7 @@ test("require every configured category and ignore superseded analyses after suc
       analyses: [
         {
           id: 1,
-          commit_sha: merge,
+          commit_sha: head,
           created_at: "2026-11-22T02:00:00Z",
           error: "",
           tool: { name: "CodeQL", guid: "codeql" },
@@ -153,7 +152,7 @@ test("require every configured category and ignore superseded analyses after suc
         },
         {
           id: 2,
-          commit_sha: merge,
+          commit_sha: head,
           created_at: "2026-11-22T02:00:00Z",
           error: "failed",
           tool: { name: "CodeQL", guid: "codeql" },

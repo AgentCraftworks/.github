@@ -379,6 +379,7 @@ jobs:
         uses: actions/github-script@v8
         env:
           GH_PR_NUMBER: ${{ inputs.pull_number }}
+          GH_REQUIRED_CODE_SCANNING_CATEGORIES: ${{ inputs.required_code_scanning_categories }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
@@ -403,6 +404,7 @@ jobs:
             }
 
             const ref = `refs/pull/${number}/merge`;
+            const headRef = `refs/pull/${number}/head`;
             let prAlerts;
             try {
               const merge = await github.request("GET /repos/{owner}/{repo}/commits/{ref}", { owner, repo, ref });
@@ -414,7 +416,7 @@ jobs:
               }
               const analyses = await github.paginate(
                 "GET /repos/{owner}/{repo}/code-scanning/analyses",
-                { owner, repo, ref, per_page: 100 }
+                { owner, repo, ref: headRef, per_page: 100 }
               );
               const requiredCategories = (process.env.GH_REQUIRED_CODE_SCANNING_CATEGORIES || "CodeQL")
                 .split(",")
@@ -426,7 +428,7 @@ jobs:
 
               const newestByConfiguration = new Map();
               for (const analysis of analyses) {
-                if (analysis.commit_sha !== mergeSha) continue;
+                if (analysis.commit_sha !== headSha) continue;
                 const toolName = analysis.tool?.name || "";
                 const toolGuid = analysis.tool?.guid || "";
                 const category = analysis.category || analysis.tool?.category || "";
@@ -448,7 +450,7 @@ jobs:
 
               const current = [...newestByConfiguration.values()];
               if (!current.length) {
-                throw new Error(`No valid successful code scanning analysis for current PR #${number} merge commit.`);
+                throw new Error(`No valid successful code scanning analysis for current PR #${number} head commit.`);
               }
               for (const requiredCategory of requiredCategories) {
                 const needle = requiredCategory.toLowerCase();
@@ -463,7 +465,7 @@ jobs:
                   return values.some((value) => value.toLowerCase().includes(needle));
                 });
                 if (!matches.length) {
-                  throw new Error(`Missing successful code scanning category '${requiredCategory}' for current PR #${number} merge commit.`);
+                  throw new Error(`Missing successful code scanning category '${requiredCategory}' for current PR #${number} head commit.`);
                 }
                 if (matches.some((analysis) =>
                   typeof analysis.error !== "string" || analysis.error || analysis.warning)) {
@@ -472,7 +474,7 @@ jobs:
               }
               prAlerts = await github.paginate(
                 "GET /repos/{owner}/{repo}/code-scanning/alerts",
-                { owner, repo, state: "open", ref, per_page: 100 }
+                { owner, repo, state: "open", ref: headRef, per_page: 100 }
               );
               const latest = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
                 owner, repo, pull_number: number,
