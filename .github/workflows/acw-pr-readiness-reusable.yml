@@ -631,7 +631,7 @@ jobs:
       - review-feedback-gate
       - ghas-gate
       - dependency-review-gate
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     steps:
       - name: Generate app token
         id: app-token

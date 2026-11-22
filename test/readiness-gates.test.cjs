@@ -200,6 +200,7 @@ test("dependency review uses trusted checkout, explicit refs, and rejects incomp
 });
 
 test("escalation fails on failed, skipped, cancelled, or missing required gates, including drafts", async () => {
+  assert.match(job("escalate-human-decision"), /^    if: \$\{\{ !cancelled\(\) \}\}$/m);
   const names = ["required-human-approval", "review-feedback-gate", "ghas-gate", "dependency-review-gate"];
   for (const result of ["failure", "skipped", "cancelled", undefined]) {
     const needs = Object.fromEntries(names.map((name) => [name, { result: "success" }]));
