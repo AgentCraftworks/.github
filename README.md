@@ -9,6 +9,11 @@ This repo now provides:
 - Workflow template: `.github/workflow-templates/acw-pr-readiness.yml`
 - Operating model (release/compliance operations): `docs/operations/workflow-pack-operating-model.md`
 - Incident runbook (workflow payload reliability/governance): `docs/operations/workflow-pack-incident-runbook.md`
+- Futures strategy: `docs/futures/agentcraftworks-futures-strategy.md`
+
+## Futures strategy
+
+The futures strategy covers the next strategic layer for AgentCraftworks: better onboarding, an education tier for self-learners and educators, and a practical path from AI-assisted adoption to reliable agentic engineering. It is intentionally original and includes licensing guidance for adapting public learning resources without copying protected material verbatim.
 
 To onboard a repository, add the template workflow (or call the reusable workflow directly) and then enforce it with branch/ruleset required checks on `staging` and `main`.
 
