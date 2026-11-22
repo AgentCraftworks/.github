@@ -543,6 +543,7 @@ jobs:
             } else {
               const requiredContexts = [
                 "ACW-pr-readiness / required-human-approval",
+                "ACW-pr-readiness / Validate unresolved review threads",
                 "ACW-pr-readiness / ghas-gate",
                 "ACW-pr-readiness / dependency-review-gate",
                 "ACW-pr-readiness / Escalate unresolved findings for human decision",
