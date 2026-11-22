@@ -77,6 +77,8 @@ async function run(id, {
     escalation_label: "needs-human-decision",
     required_human_reviewer: "maintainer",
     enforced_base_branches: "staging,main",
+    run_core_gates: true,
+    enable_privileged_actions: true,
   };
   // Execute the actual inline workflow script, not a copied implementation.
   const script = job(id).split("          script: |\n")[1]
