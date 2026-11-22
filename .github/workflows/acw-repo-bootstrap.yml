@@ -1,0 +1,53 @@
+# Engagement Level: T3 (Write) — Posts the informational AgentCraftworks setup check run.
+# Runs manually or when invoked by the repository_dispatch onboarding event.
+
+name: acw-repo-bootstrap
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types:
+      - acw-installation
+      - acw-repo-bootstrap
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  post-setup-check:
+    name: AgentCraftworks setup
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.AGENTCRAFTWORKS_APP_ID }}
+          private-key: ${{ secrets.AGENTCRAFTWORKS_APP_PRIVATE_KEY }}
+
+      - name: Post agentcraftworks-setup check
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const sha = context.payload.after ||
+              context.payload.check_suite?.head_sha ||
+              context.payload.client_payload?.sha ||
+              context.sha;
+
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: "agentcraftworks-setup",
+              head_sha: sha,
+              status: "completed",
+              conclusion: "success",
+              output: {
+                title: "AgentCraftworks setup complete",
+                summary: "The AgentCraftworks repository bootstrap check was posted successfully.",
+              },
+            });
