@@ -411,7 +411,8 @@ jobs:
                 { owner, repo, ref, per_page: 100 }
               );
               const current = analyses.filter((analysis) => analysis.commit_sha === mergeSha);
-              if (!current.length || current.some((analysis) => typeof analysis.error !== "string" || analysis.error)) {
+              if (!current.length || current.some((analysis) =>
+                typeof analysis.error !== "string" || analysis.error || analysis.warning)) {
                 throw new Error(`No valid successful code scanning analysis for current PR #${number} merge commit.`);
               }
               prAlerts = await github.paginate(

@@ -64,7 +64,7 @@ test("required security jobs do not skip caller events", () => {
 });
 
 for (const event of ["pull_request", "pull_request_target", "pull_request_review", "workflow_call"]) {
-  test(`resolve API commit SHAs and scan merge for ${event}, including fork payloads`, async () => {
+  test(`resolve API commit SHAs and scan merge for mocked ${event} fork payloads`, async () => {
     const payload = event === "workflow_call" ? {} : { pull_request: { number: 42, head: { repo: { fork: true } } } };
     const refs = await run("Resolve PR base/head refs", { event, payload });
     assert.equal(refs.outputs.base_ref, base);
@@ -85,7 +85,8 @@ test("reject unsupported events, mismatched PRs, and invalid commit SHAs", async
 });
 
 test("fail closed on unavailable, missing, stale, failed, or changed scans and on alerts", async () => {
-  for (const analyses of [[], [{ commit_sha: head, error: "" }], [{ commit_sha: merge, error: "failed" }], [{ commit_sha: merge }]]) {
+  for (const analyses of [[], [{ commit_sha: head, error: "" }], [{ commit_sha: merge, error: "failed" }],
+    [{ commit_sha: merge, error: "", warning: "results were ignored" }], [{ commit_sha: merge }]]) {
     await assert.rejects(run("Fail when open code scanning alerts exist for this PR", scan({ analyses })), /No valid successful/);
   }
   for (const status of [403, 404, 500]) {
