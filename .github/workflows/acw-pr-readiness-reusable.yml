@@ -47,6 +47,11 @@ on:
         required: false
         type: string
         default: needs-human-decision
+      required_code_scanning_categories:
+        description: Comma-delimited code scanning tool/category names that must have successful current-merge analyses.
+        required: false
+        type: string
+        default: CodeQL
 permissions:
   contents: read
   pull-requests: read
@@ -73,6 +78,7 @@ jobs:
         uses: actions/github-script@v8
         env:
           GH_PR_NUMBER: ${{ inputs.pull_number }}
+          GH_REQUIRED_CODE_SCANNING_CATEGORIES: ${{ inputs.required_code_scanning_categories }}
           GH_TRIGGER_ACTION: ${{ inputs.trigger_action }}
           GH_REQUIRED_HUMAN_REVIEWER: ${{ inputs.required_human_reviewer }}
           GH_ENFORCED_BASE_BRANCHES: ${{ inputs.enforced_base_branches }}
@@ -410,10 +416,59 @@ jobs:
                 "GET /repos/{owner}/{repo}/code-scanning/analyses",
                 { owner, repo, ref, per_page: 100 }
               );
-              const current = analyses.filter((analysis) => analysis.commit_sha === mergeSha);
-              if (!current.length || current.some((analysis) =>
-                typeof analysis.error !== "string" || analysis.error || analysis.warning)) {
+              const requiredCategories = (process.env.GH_REQUIRED_CODE_SCANNING_CATEGORIES || "CodeQL")
+                .split(",")
+                .map((category) => category.trim())
+                .filter(Boolean);
+              if (!requiredCategories.length) {
+                throw new Error("At least one required code scanning category must be configured.");
+              }
+
+              const newestByConfiguration = new Map();
+              for (const analysis of analyses) {
+                if (analysis.commit_sha !== mergeSha) continue;
+                const toolName = analysis.tool?.name || "";
+                const toolGuid = analysis.tool?.guid || "";
+                const category = analysis.category || analysis.tool?.category || "";
+                const key = JSON.stringify([
+                  toolGuid || toolName,
+                  category,
+                  analysis.analysis_key || "",
+                  analysis.environment || "",
+                ]);
+                const previous = newestByConfiguration.get(key);
+                const timestamp = Date.parse(analysis.created_at || "") || 0;
+                const previousTimestamp = Date.parse(previous?.created_at || "") || 0;
+                if (!previous ||
+                    timestamp > previousTimestamp ||
+                    (timestamp === previousTimestamp && Number(analysis.id || 0) >= Number(previous.id || 0))) {
+                  newestByConfiguration.set(key, analysis);
+                }
+              }
+
+              const current = [...newestByConfiguration.values()];
+              if (!current.length) {
                 throw new Error(`No valid successful code scanning analysis for current PR #${number} merge commit.`);
+              }
+              for (const requiredCategory of requiredCategories) {
+                const needle = requiredCategory.toLowerCase();
+                const matches = current.filter((analysis) => {
+                  const values = [
+                    analysis.category,
+                    analysis.tool?.name,
+                    analysis.tool?.category,
+                    analysis.language,
+                    analysis.analysis_key,
+                  ].filter((value) => typeof value === "string");
+                  return values.some((value) => value.toLowerCase().includes(needle));
+                });
+                if (!matches.length) {
+                  throw new Error(`Missing successful code scanning category '${requiredCategory}' for current PR #${number} merge commit.`);
+                }
+                if (matches.some((analysis) =>
+                  typeof analysis.error !== "string" || analysis.error || analysis.warning)) {
+                  throw new Error(`Code scanning category '${requiredCategory}' has an incomplete or failed analysis for PR #${number}.`);
+                }
               }
               prAlerts = await github.paginate(
                 "GET /repos/{owner}/{repo}/code-scanning/alerts",

@@ -43,7 +43,7 @@ async function run(name, { event = "pull_request_target", payload = { pull_reque
   return { failures, outputs, calls };
 }
 
-function scan({ analyses = [{ commit_sha: merge, error: "" }], alerts = [], status, changed = false } = {}) {
+function scan({ analyses = [{ commit_sha: merge, error: "", tool: { name: "CodeQL" }, category: "CodeQL" }], alerts = [], status, changed = false } = {}) {
   let pulls = 0;
   return {
     request: async (route) => route.includes("/pulls/")
@@ -85,9 +85,13 @@ test("reject unsupported events, mismatched PRs, and invalid commit SHAs", async
 });
 
 test("fail closed on unavailable, missing, stale, failed, or changed scans and on alerts", async () => {
-  for (const analyses of [[], [{ commit_sha: head, error: "" }], [{ commit_sha: merge, error: "failed" }],
-    [{ commit_sha: merge, error: "", warning: "results were ignored" }], [{ commit_sha: merge }]]) {
-    await assert.rejects(run("Fail when open code scanning alerts exist for this PR", scan({ analyses })), /No valid successful/);
+  for (const analyses of [[],
+    [{ commit_sha: head, error: "", tool: { name: "CodeQL" }, category: "CodeQL" }],
+    [{ commit_sha: merge, error: "failed", tool: { name: "CodeQL" }, category: "CodeQL" }],
+    [{ commit_sha: merge, error: "", warning: "results were ignored", tool: { name: "CodeQL" }, category: "CodeQL" }],
+    [{ commit_sha: merge, tool: { name: "CodeQL" }, category: "CodeQL" }]]) {
+    await assert.rejects(run("Fail when open code scanning alerts exist for this PR", scan({ analyses })),
+      /No valid successful|Missing successful code scanning category|incomplete or failed analysis/);
   }
   for (const status of [403, 404, 500]) {
     await assert.rejects(run("Fail when open code scanning alerts exist for this PR", scan({ status })));
@@ -95,6 +99,72 @@ test("fail closed on unavailable, missing, stale, failed, or changed scans and o
   await assert.rejects(run("Fail when open code scanning alerts exist for this PR", scan({ changed: true })), /changed/);
   const result = await run("Fail when open code scanning alerts exist for this PR", scan({ alerts: [{ rule: { id: "test" } }] }));
   assert.match(result.failures[0], /Open GHAS/);
+});
+
+test("require every configured category and ignore superseded analyses after successful reruns", async () => {
+  await assert.rejects(run("Fail when open code scanning alerts exist for this PR", {
+    ...scan({
+      analyses: [{ commit_sha: merge, error: "", tool: { name: "CodeQL" }, category: "CodeQL" }],
+    }),
+    env: { GH_REQUIRED_CODE_SCANNING_CATEGORIES: "CodeQL,JavaScript" },
+  }), /Missing successful code scanning category 'JavaScript'/);
+
+  const rerun = await run("Fail when open code scanning alerts exist for this PR", {
+    ...scan({
+      analyses: [
+        {
+          id: 1,
+          commit_sha: merge,
+          created_at: "2026-11-22T01:00:00Z",
+          error: "failed",
+          tool: { name: "CodeQL", guid: "codeql" },
+          category: "javascript",
+          analysis_key: "javascript",
+          environment: "",
+        },
+        {
+          id: 2,
+          commit_sha: merge,
+          created_at: "2026-11-22T02:00:00Z",
+          error: "",
+          tool: { name: "CodeQL", guid: "codeql" },
+          category: "javascript",
+          analysis_key: "javascript",
+          environment: "",
+        },
+      ],
+    }),
+    env: { GH_REQUIRED_CODE_SCANNING_CATEGORIES: "javascript" },
+  });
+  assert.deepEqual(rerun.failures, []);
+
+  await assert.rejects(run("Fail when open code scanning alerts exist for this PR", {
+    ...scan({
+      analyses: [
+        {
+          id: 1,
+          commit_sha: merge,
+          created_at: "2026-11-22T02:00:00Z",
+          error: "",
+          tool: { name: "CodeQL", guid: "codeql" },
+          category: "javascript",
+          analysis_key: "javascript",
+          environment: "",
+        },
+        {
+          id: 2,
+          commit_sha: merge,
+          created_at: "2026-11-22T02:00:00Z",
+          error: "failed",
+          tool: { name: "CodeQL", guid: "codeql" },
+          category: "python",
+          analysis_key: "python",
+          environment: "",
+        },
+      ],
+    }),
+    env: { GH_REQUIRED_CODE_SCANNING_CATEGORIES: "javascript,python" },
+  }), /category 'python'.*(incomplete|failed)/);
 });
 
 test("dependency review uses trusted checkout, explicit refs, and rejects incomplete or inaccessible graphs", async () => {

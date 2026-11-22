@@ -143,8 +143,10 @@ When escalating, include:
   maintainers and the app team must review the change, publish a reviewed immutable
   workflow release, and update consumer pins through separate protected-branch PRs.
   Verify real PR, review, fork, permission-denied, and vulnerability scenarios before adoption.
-  The GHAS gate requires at least one successful current merge analysis, but that
-  alone does not establish that every required scan category has completed.
+  The GHAS gate requires successful current merge analyses for every configured
+  required scan category; absent categories fail closed. It also selects the
+  newest analysis within each tool/category/analysis-key/environment configuration,
+  so superseded reruns do not remain blocked by historical failures.
   Review scan coverage and sequencing before rollout; if readiness runs before
   scanning finishes, rerun it after the scan completes. Fork `pull_request`
   callers may not receive the app secrets; validate a trusted caller and its
