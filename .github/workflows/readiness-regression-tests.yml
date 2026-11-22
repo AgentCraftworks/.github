@@ -1,0 +1,23 @@
+# Engagement Level: T1 (Read) — Run isolated readiness regression tests without secrets.
+name: Readiness regression tests
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/acw-pr-readiness-reusable.yml'
+      - '.github/workflows/readiness-regression-tests.yml'
+      - 'test/readiness-gates.test.cjs'
+
+permissions:
+  contents: read
+
+jobs:
+  regression-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Run readiness regression tests
+        run: node --test test/readiness-gates.test.cjs
