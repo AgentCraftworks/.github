@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
   pull-requests: read
   issues: read
   security-events: read
@@ -39,6 +40,4 @@ jobs:
       request_copilot_review: true
       copilot_reviewer_candidates: copilot,github-copilot[bot]
       escalation_label: needs-human-decision
-    secrets:
-      GH_APP_ID: ${{ secrets.AGENTCRAFTWORKS_APP_ID }}
-      GH_APP_PRIVATE_KEY: ${{ secrets.AGENTCRAFTWORKS_APP_PRIVATE_KEY }}
+      enable_privileged_actions: false
