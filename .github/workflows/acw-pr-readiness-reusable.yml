@@ -604,6 +604,11 @@ jobs:
                   failing.push(gate === "Escalate unresolved findings for human decision" ? "escalation-sync" : gate);
                 }
               }
+
+              const reviewFeedbackRun = latestByName.get("ACW-pr-readiness / Validate unresolved review threads");
+              if (reviewFeedbackRun && failingConclusions.has((reviewFeedbackRun.conclusion || "").toLowerCase())) {
+                failing.push("review-feedback-gate");
+              }
             }
 
             if (failing.length === 0) {
