@@ -39,7 +39,13 @@ async function run(name, { event = "pull_request_target", payload = { pull_reque
   const context = { eventName: event, payload, repo: { owner: "org", repo: "repo" } };
   const variables = { GH_PR_NUMBER: "42", GH_BASE_SHA: base, GH_HEAD_SHA: head, ...env };
   const source = script(name).replace("${{ toJson(needs) }}", JSON.stringify(needs));
-  await vm.runInNewContext(`(async () => {\n${source}\n})()`, { core, github, context, process: { env: variables } });
+  await vm.runInNewContext(`(async () => {\n${source}\n})()`, {
+    core,
+    github,
+    context,
+    process: { env: variables },
+    setTimeout: (callback) => callback(),
+  });
   return { failures, outputs, calls };
 }
 

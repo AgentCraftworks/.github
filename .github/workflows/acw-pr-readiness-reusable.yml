@@ -414,10 +414,19 @@ jobs:
                   !parents.includes(baseSha) || !parents.includes(headSha)) {
                 throw new Error(`PR #${number} merge ref does not match the current base and head.`);
               }
-              const analyses = await github.paginate(
-                "GET /repos/{owner}/{repo}/code-scanning/analyses",
-                { owner, repo, ref: headRef, per_page: 100 }
-              );
+              let analyses = [];
+              for (let attempt = 1; attempt <= 6; attempt++) {
+                analyses = await github.paginate(
+                  "GET /repos/{owner}/{repo}/code-scanning/analyses",
+                  { owner, repo, ref: headRef, per_page: 100 }
+                );
+                if (analyses.some((analysis) => analysis.commit_sha === headSha)) {
+                  break;
+                }
+                if (attempt < 6) {
+                  await new Promise((resolve) => setTimeout(resolve, 10000));
+                }
+              }
               const requiredCategories = (process.env.GH_REQUIRED_CODE_SCANNING_CATEGORIES || "CodeQL")
                 .split(",")
                 .map((category) => category.trim())
