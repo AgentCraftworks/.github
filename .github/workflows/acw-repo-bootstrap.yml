@@ -39,7 +39,7 @@ jobs:
               context.payload.client_payload?.sha ||
               context.sha;
 
-            await github.rest.checks.create({
+            await github.request("POST /repos/{owner}/{repo}/check-runs", {
               owner: context.repo.owner,
               repo: context.repo.repo,
               name: "agentcraftworks-setup",
