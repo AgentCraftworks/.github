@@ -71,7 +71,7 @@ jobs:
     if: ${{ inputs.enable_privileged_actions && contains(fromJson('["opened","reopened","synchronize","ready_for_review","review_requested"]'), inputs.trigger_action) }}
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: read
     steps:
       - name: Generate app token
         id: app-token
