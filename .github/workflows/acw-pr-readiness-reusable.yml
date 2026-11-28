@@ -48,7 +48,7 @@ on:
         type: string
         default: needs-human-decision
       required_code_scanning_categories:
-        description: Comma-delimited code scanning tool/category names that must have successful current-merge analyses.
+        description: Comma-delimited code scanning tool/category names required for the current merge tree.
         required: false
         type: string
         default: CodeQL
@@ -406,6 +406,9 @@ jobs:
                   !parents.includes(baseSha) || !parents.includes(headSha)) {
                 throw new Error(`PR #${number} merge ref does not match the current base and head.`);
               }
+              let scanRef = ref;
+              let scanSha = mergeSha;
+              let branchRef;
               let analyses = [];
               for (let attempt = 1; attempt <= 6; attempt++) {
                 analyses = await github.paginate(
@@ -414,6 +417,31 @@ jobs:
                 );
                 if (analyses.some((analysis) => analysis.commit_sha === mergeSha)) {
                   break;
+                }
+                if (attempt === 1 &&
+                    prResponse.data.head?.repo?.full_name?.toLowerCase() === `${owner}/${repo}`.toLowerCase() &&
+                    typeof prResponse.data.head?.ref === "string" && prResponse.data.head.ref) {
+                  const candidate = `refs/heads/${prResponse.data.head.ref}`;
+                  const branch = await github.request("GET /repos/{owner}/{repo}/commits/{ref}", {
+                    owner, repo, ref: candidate,
+                  });
+                  const mergeTree = merge.data.commit?.tree?.sha;
+                  if (branch.data.sha === headSha && /^[a-f0-9]{40}$/i.test(mergeTree || "") &&
+                      branch.data.commit?.tree?.sha === mergeTree) {
+                    branchRef = candidate;
+                  }
+                }
+                if (branchRef) {
+                  const branchAnalyses = await github.paginate(
+                    "GET /repos/{owner}/{repo}/code-scanning/analyses",
+                    { owner, repo, ref: branchRef, per_page: 100 }
+                  );
+                  if (branchAnalyses.some((analysis) => analysis.commit_sha === headSha)) {
+                    analyses = branchAnalyses;
+                    scanRef = branchRef;
+                    scanSha = headSha;
+                    break;
+                  }
                 }
                 if (attempt < 6) {
                   await new Promise((resolve) => setTimeout(resolve, 10000));
@@ -429,7 +457,7 @@ jobs:
 
               const newestByConfiguration = new Map();
               for (const analysis of analyses) {
-                if (analysis.commit_sha !== mergeSha) continue;
+                if (analysis.commit_sha !== scanSha) continue;
                 const toolName = analysis.tool?.name || "";
                 const toolGuid = analysis.tool?.guid || "";
                 const category = analysis.category || analysis.tool?.category || "";
@@ -475,13 +503,17 @@ jobs:
               }
               prAlerts = await github.paginate(
                 "GET /repos/{owner}/{repo}/code-scanning/alerts",
-                { owner, repo, state: "open", ref, per_page: 100 }
+                { owner, repo, state: "open", ref: scanRef, per_page: 100 }
               );
               const latest = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
                 owner, repo, pull_number: number,
               });
               const latestMerge = await github.request("GET /repos/{owner}/{repo}/commits/{ref}", { owner, repo, ref });
-              if (latest.data.head?.sha !== headSha || latest.data.base?.sha !== baseSha || latestMerge.data.sha !== mergeSha) {
+              const latestBranch = scanRef === ref ? undefined : await github.request(
+                "GET /repos/{owner}/{repo}/commits/{ref}", { owner, repo, ref: scanRef }
+              );
+              if (latest.data.head?.sha !== headSha || latest.data.base?.sha !== baseSha ||
+                  latestMerge.data.sha !== mergeSha || (latestBranch && latestBranch.data.sha !== headSha)) {
                 throw new Error(`PR #${number} changed while code scanning results were checked.`);
               }
             } catch (error) {

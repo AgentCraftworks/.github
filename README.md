@@ -24,8 +24,11 @@ in the caller repository. Both security gates evaluate that explicit PR, regardl
 the caller event (`pull_request`, `pull_request_target`, review events, or non-PR
 events such as `workflow_dispatch`). There is no non-PR/no-target success mode:
 invalid or nonexistent PR inputs fail explicitly. GHAS permission/unavailability
-errors fail rather than reporting an empty successful scan. A valid alert query with
-zero results passes; it does not attest that all external scan producers have finished.
+errors fail rather than reporting an empty successful scan. The GHAS gate requires
+successful configured scan categories for the current merge commit. If no merge scan
+exists, it can use a same-repository head-branch scan only when the head and merge
+Git trees are identical and the branch still points to the PR head. Branch fallback
+checks all open alerts on that branch, not just PR-introduced alerts.
 Dependency review checks out the trusted PR base SHA without persisting credentials;
 the untrusted head SHA is used only as dependency-comparison data.
 
