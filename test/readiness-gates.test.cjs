@@ -124,6 +124,60 @@ test("fail closed on unavailable, missing, stale, failed, or changed scans and o
   assert.match(result.failures[0], /Open GHAS/);
 });
 
+test("accept branch scans only when the current PR head and merge trees are identical", async () => {
+  const tree = "e".repeat(40);
+  const branchRef = "refs/heads/staging";
+  const headPr = { ...pr, head: { sha: head, ref: "staging", repo: { full_name: "org/repo" } } };
+  const analysis = { commit_sha: head, error: "", tool: { name: "CodeQL" }, category: "CodeQL" };
+  function branchScan({ branchTree = tree, branchSha = head, analyses = [analysis], alerts = [], mergeAlerts = [], changedBranch = false, fork = false } = {}) {
+    let branchRequests = 0;
+    const refs = [];
+    return {
+      refs,
+      request: async (route, options) => {
+        if (route.includes("/pulls/")) return { data: fork ? { ...headPr, head: { ...headPr.head, repo: { full_name: "fork/repo" } } } : headPr };
+        if (options.ref === branchRef) {
+          branchRequests++;
+          return { data: { sha: changedBranch && branchRequests > 1 ? "d".repeat(40) : branchSha, commit: { tree: { sha: branchTree } } } };
+        }
+        return { data: { sha: merge, parents: [{ sha: base }, { sha: head }], commit: { tree: { sha: tree } } } };
+      },
+      paginate: async (route, options) => {
+        refs.push([route, options.ref]);
+        if (options.ref === "refs/pull/42/merge") return route.endsWith("/analyses") ? [] : mergeAlerts;
+        assert.equal(options.ref, branchRef);
+        return route.endsWith("/analyses") ? analyses : alerts;
+      },
+    };
+  }
+
+  const equivalent = branchScan();
+  assert.deepEqual((await run("Fail when open code scanning alerts exist for this PR", equivalent)).failures, []);
+  assert.ok(equivalent.refs.some(([route, ref]) => route.endsWith("/alerts") && ref === branchRef));
+  for (const options of [
+    { branchTree: "f".repeat(40) },
+    { branchSha: "d".repeat(40) },
+    { analyses: [{ ...analysis, commit_sha: "d".repeat(40) }] },
+    { fork: true },
+  ]) {
+    await assert.rejects(run("Fail when open code scanning alerts exist for this PR", branchScan(options)), /No valid successful/);
+  }
+  await assert.rejects(run("Fail when open code scanning alerts exist for this PR", branchScan({ changedBranch: true })), /changed/);
+  await assert.rejects(run("Fail when open code scanning alerts exist for this PR", branchScan({
+    analyses: [{ ...analysis, error: "failed" }],
+  })), /incomplete or failed/);
+  await assert.rejects(run("Fail when open code scanning alerts exist for this PR", branchScan({
+    analyses: [
+      { ...analysis, id: 1, created_at: "2026-11-22T01:00:00Z" },
+      { ...analysis, id: 2, commit_sha: "d".repeat(40), created_at: "2026-11-22T02:00:00Z" },
+    ],
+  })), /Latest branch code scanning analyses/);
+  const findings = await run("Fail when open code scanning alerts exist for this PR", branchScan({ alerts: [{ rule: { id: "test" } }] }));
+  assert.match(findings.failures[0], /Open GHAS/);
+  const prFindings = await run("Fail when open code scanning alerts exist for this PR", branchScan({ mergeAlerts: [{ rule: { id: "pr-only" } }] }));
+  assert.match(prFindings.failures[0], /pr-only/);
+});
+
 test("require every configured category and ignore superseded analyses after successful reruns", async () => {
   await assert.rejects(run("Fail when open code scanning alerts exist for this PR", {
     ...scan({
