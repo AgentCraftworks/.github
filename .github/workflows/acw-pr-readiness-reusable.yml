@@ -457,7 +457,7 @@ jobs:
 
               const newestByConfiguration = new Map();
               for (const analysis of analyses) {
-                if (analysis.commit_sha !== scanSha) continue;
+                if (scanRef === ref && analysis.commit_sha !== scanSha) continue;
                 const toolName = analysis.tool?.name || "";
                 const toolGuid = analysis.tool?.guid || "";
                 const category = analysis.category || analysis.tool?.category || "";
@@ -478,6 +478,9 @@ jobs:
               }
 
               const current = [...newestByConfiguration.values()];
+              if (scanRef !== ref && current.some((analysis) => analysis.commit_sha !== scanSha)) {
+                throw new Error(`Latest branch code scanning analyses do not all match the current PR #${number} head.`);
+              }
               if (!current.length) {
                 throw new Error(`No valid successful code scanning analysis for current PR #${number} merge commit.`);
               }
@@ -505,6 +508,14 @@ jobs:
                 "GET /repos/{owner}/{repo}/code-scanning/alerts",
                 { owner, repo, state: "open", ref: scanRef, per_page: 100 }
               );
+              if (scanRef !== ref) {
+                const mergeAlerts = await github.paginate(
+                  "GET /repos/{owner}/{repo}/code-scanning/alerts",
+                  { owner, repo, state: "open", ref, per_page: 100 }
+                );
+                const seen = new Set(prAlerts.map((alert) => alert.number).filter((number) => Number.isSafeInteger(number)));
+                prAlerts.push(...mergeAlerts.filter((alert) => !seen.has(alert.number)));
+              }
               const latest = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
                 owner, repo, pull_number: number,
               });

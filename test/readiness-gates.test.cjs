@@ -129,7 +129,7 @@ test("accept branch scans only when the current PR head and merge trees are iden
   const branchRef = "refs/heads/staging";
   const headPr = { ...pr, head: { sha: head, ref: "staging", repo: { full_name: "org/repo" } } };
   const analysis = { commit_sha: head, error: "", tool: { name: "CodeQL" }, category: "CodeQL" };
-  function branchScan({ branchTree = tree, branchSha = head, analyses = [analysis], alerts = [], changedBranch = false, fork = false } = {}) {
+  function branchScan({ branchTree = tree, branchSha = head, analyses = [analysis], alerts = [], mergeAlerts = [], changedBranch = false, fork = false } = {}) {
     let branchRequests = 0;
     const refs = [];
     return {
@@ -144,7 +144,7 @@ test("accept branch scans only when the current PR head and merge trees are iden
       },
       paginate: async (route, options) => {
         refs.push([route, options.ref]);
-        if (options.ref === "refs/pull/42/merge") return [];
+        if (options.ref === "refs/pull/42/merge") return route.endsWith("/analyses") ? [] : mergeAlerts;
         assert.equal(options.ref, branchRef);
         return route.endsWith("/analyses") ? analyses : alerts;
       },
@@ -166,8 +166,16 @@ test("accept branch scans only when the current PR head and merge trees are iden
   await assert.rejects(run("Fail when open code scanning alerts exist for this PR", branchScan({
     analyses: [{ ...analysis, error: "failed" }],
   })), /incomplete or failed/);
+  await assert.rejects(run("Fail when open code scanning alerts exist for this PR", branchScan({
+    analyses: [
+      { ...analysis, id: 1, created_at: "2026-11-22T01:00:00Z" },
+      { ...analysis, id: 2, commit_sha: "d".repeat(40), created_at: "2026-11-22T02:00:00Z" },
+    ],
+  })), /Latest branch code scanning analyses/);
   const findings = await run("Fail when open code scanning alerts exist for this PR", branchScan({ alerts: [{ rule: { id: "test" } }] }));
   assert.match(findings.failures[0], /Open GHAS/);
+  const prFindings = await run("Fail when open code scanning alerts exist for this PR", branchScan({ mergeAlerts: [{ rule: { id: "pr-only" } }] }));
+  assert.match(prFindings.failures[0], /pr-only/);
 });
 
 test("require every configured category and ignore superseded analyses after successful reruns", async () => {

@@ -27,8 +27,9 @@ invalid or nonexistent PR inputs fail explicitly. GHAS permission/unavailability
 errors fail rather than reporting an empty successful scan. The GHAS gate requires
 successful configured scan categories for the current merge commit. If no merge scan
 exists, it can use a same-repository head-branch scan only when the head and merge
-Git trees are identical and the branch still points to the PR head. Branch fallback
-checks all open alerts on that branch, not just PR-introduced alerts.
+Git trees are identical, the branch still points to the PR head, and its latest
+analyses match that head. Branch fallback checks open alerts on both the PR and the
+branch, including branch alerts not introduced by the PR.
 Dependency review checks out the trusted PR base SHA without persisting credentials;
 the untrusted head SHA is used only as dependency-comparison data.
 
